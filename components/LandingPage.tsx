@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Rocket, LogIn, Sparkles, Zap, ChevronRight, RefreshCw } from 'lucide-react';
+import { motion, AnimatePresence, Variants } from 'framer-motion';
+import { Rocket, LogIn, Zap, ChevronRight, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import { translations } from '../i18n';
 import NeonButton from './NeonButton';
@@ -11,7 +10,7 @@ const LandingPage: React.FC = () => {
   const t = translations[language];
   const [showContinueDialog, setShowContinueDialog] = useState(false);
 
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: { 
       opacity: 1,
@@ -19,9 +18,16 @@ const LandingPage: React.FC = () => {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } }
+    visible: { 
+      opacity: 1, 
+      y: 0, 
+      transition: { 
+        duration: 0.6, 
+        ease: "easeOut" as const 
+      } 
+    }
   };
 
   const handleStartMission = () => {
