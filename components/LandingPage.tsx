@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Rocket, LogIn, Zap, ChevronRight, RefreshCw } from 'lucide-react';
@@ -25,7 +26,7 @@ const LandingPage: React.FC = () => {
       y: 0, 
       transition: { 
         duration: 0.6, 
-        ease: "easeOut" as const 
+        ease: "easeOut"
       } 
     }
   };
