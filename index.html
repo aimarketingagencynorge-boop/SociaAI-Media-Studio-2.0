@@ -93,16 +93,18 @@
     <div id="root"></div>
     <script>
         const starfield = document.getElementById('starfield');
-        for (let i = 0; i < 150; i++) {
-            const star = document.createElement('div');
-            star.className = 'star';
-            const size = (Math.random() * 2 + 1) + 'px';
-            star.style.width = size;
-            star.style.height = size;
-            star.style.left = Math.random() * 100 + '%';
-            star.style.top = Math.random() * 100 + '%';
-            star.style.opacity = Math.random() * 0.5 + 0.1;
-            starfield.appendChild(star);
+        if (starfield) {
+            for (let i = 0; i < 150; i++) {
+                const star = document.createElement('div');
+                star.className = 'star';
+                const size = (Math.random() * 2 + 1) + 'px';
+                star.style.width = size;
+                star.style.height = size;
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+                star.style.opacity = Math.random() * 0.5 + 0.1;
+                starfield.appendChild(star);
+            }
         }
     </script>
     <script type="module" src="/index.tsx"></script>
