@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import { Rocket, LogIn, Zap, ChevronRight, RefreshCw } from 'lucide-react';
