@@ -40,35 +40,18 @@
             transform: translateZ(0);
         }
 
-        /* Neon Glows */
-        .glow-purple { filter: drop-shadow(0 0 10px rgba(140, 77, 255, 0.8)); }
-        .glow-cyan { filter: drop-shadow(0 0 10px rgba(52, 224, 247, 0.8)); }
-        .glow-magenta { filter: drop-shadow(0 0 10px rgba(199, 76, 255, 0.8)); }
-        
         .glass-panel {
             background: rgba(255, 255, 255, 0.02);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.08);
             box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.02);
-            will-change: backdrop-filter;
-        }
-
-        @keyframes pulse-beacon {
-            0% { transform: scale(1); opacity: 0.8; box-shadow: 0 0 0 0 rgba(52, 224, 247, 0.7); }
-            70% { transform: scale(1.6); opacity: 0; box-shadow: 0 0 0 20px rgba(52, 224, 247, 0); }
-            100% { transform: scale(1); opacity: 0.8; box-shadow: 0 0 0 0 rgba(52, 224, 247, 0); }
-        }
-        .nav-beacon {
-            animation: pulse-beacon 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-            will-change: transform, opacity;
         }
 
         .starfield {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             z-index: -1;
-            will-change: transform;
             transform: translateZ(0);
         }
         .star {
@@ -77,37 +60,30 @@
             border-radius: 50%;
             opacity: 0.4;
         }
+        
+        .hologram-logo {
+            filter: drop-shadow(0 0 10px rgba(52, 224, 247, 0.5));
+        }
 
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: rgba(10, 10, 18, 0.8); }
         ::-webkit-scrollbar-thumb { background: rgba(52, 224, 247, 0.3); border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(52, 224, 247, 0.5); }
-
-        .hologram-logo {
-            filter: drop-shadow(0 0 10px rgba(52, 224, 247, 0.5));
-            will-change: filter, transform;
-            transform: translateZ(0);
-        }
-
-        /* Prevent overscroll bounce */
-        body, html {
-            overscroll-behavior: none;
-        }
+        
+        body, html { overscroll-behavior: none; }
     </style>
 <script type="importmap">
 {
   "imports": {
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.474.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.37.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "zustand": "https://esm.sh/zustand@^5.0.10",
-    "zustand/middleware": "https://esm.sh/zustand@^5.0.10/middleware",
-    "framer-motion": "https://esm.sh/framer-motion@^12.27.2",
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+    "framer-motion": "https://esm.sh/framer-motion@^12.29.0",
     "zustand/": "https://esm.sh/zustand@^5.0.10/",
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "zustand": "https://esm.sh/zustand@^5.0.10"
   }
 }
 </script>
