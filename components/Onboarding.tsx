@@ -116,7 +116,7 @@ const Onboarding: React.FC = () => {
   };
 
   const finalizeMission = async () => {
-    if (!brand.logoUrl) {
+    if (!brand.logos?.main) {
       alert("LOGO_REQUIRED: Proszę wgrać lub zatwierdzić logo przed odpaleniem silników.");
       setOnboardingStep(3);
       return;
@@ -124,12 +124,11 @@ const Onboarding: React.FC = () => {
     setAutopilotRunning(true);
     try {
       const plan = await gemini.generateWeeklyPlan(brand, language);
-      // setWeeklyPlan might throw if persistence fails, but with IndexedDB it's much safer
       setWeeklyPlan(plan);
       setOnboardingStep(0); 
     } catch (e: any) {
       console.error("Autopilot failed", e);
-      alert(`Autopilot Error: ${e.message || "Failed to generate or save mission plan. Check your internet connection or storage quota."}`);
+      alert(`Autopilot Error: Nie udało się wygenerować planu. Sprawdź połączenie.`);
     } finally {
       setAutopilotRunning(false);
     }
@@ -148,7 +147,7 @@ const Onboarding: React.FC = () => {
   };
 
   const handleStepNext = () => {
-    if (onboardingStep === 3 && !brand.logoUrl) return;
+    if (onboardingStep === 3 && !brand.logos?.main) return;
     if (onboardingStep < 5) setOnboardingStep(onboardingStep + 1);
     else finalizeMission();
   };
@@ -157,6 +156,7 @@ const Onboarding: React.FC = () => {
     <div className="min-h-screen bg-[#0A0A12] text-white p-6 md:p-12 flex flex-col items-center overflow-y-auto relative pb-32">
       <AutopilotOverlay />
 
+      {/* STEP HUD */}
       <div className="w-full max-w-4xl mb-12 relative flex justify-between items-center bg-black/40 p-4 rounded-2xl border border-white/5 backdrop-blur-md">
         <div className="absolute top-1/2 left-8 right-8 h-[1px] bg-white/5 -translate-y-1/2" />
         {steps.map((step, idx) => {
@@ -236,36 +236,6 @@ const Onboarding: React.FC = () => {
             </motion.div>
           )}
 
-          {onboardingStep === 2 && (
-            <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#8C4DFF]/20">
-                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest">2. DNA MARKI</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Nazwa Marki</label>
-                    <input type="text" value={brand.name} onChange={e => updateBrand({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Branża</label>
-                    <input type="text" value={brand.industry} onChange={e => updateBrand({ industry: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
-                  </div>
-                  <div className="md:col-span-2 space-y-2">
-                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Misja / Opis (${language})</label>
-                    <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF] min-h-[100px]" />
-                  </div>
-                  <div className="md:col-span-2 space-y-2">
-                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">USP (Unikalna Cecha)</label>
-                    <input type="text" placeholder="..." value={brand.usp || ''} onChange={e => updateBrand({ usp: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
-                 <NeonButton variant="purple" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: LOOK</NeonButton>
-              </div>
-            </motion.div>
-          )}
-
           {onboardingStep === 3 && (
             <motion.div key="step3" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#C74CFF]/20">
@@ -274,17 +244,16 @@ const Onboarding: React.FC = () => {
                    <div className="space-y-6">
                       <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Logo Marki (Wymagane)</label>
                       <div className="aspect-square glass-panel border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center p-8 text-center relative overflow-hidden group hover:border-[#34E0F7]/40 transition-all">
-                        {brand.logoUrl ? (
+                        {brand.logos?.main ? (
                           <>
                             <motion.img 
                               initial={{ opacity: 0, scale: 0.8 }}
                               animate={{ opacity: 1, scale: 1 }}
-                              src={brand.logoUrl} 
+                              src={brand.logos.main} 
                               alt="Brand Logo" 
                               className="max-w-[80%] max-h-[80%] object-contain relative z-10 glow-cyan" 
-                              onError={() => updateBrand({ logoUrl: '' })}
                             />
-                            <button onClick={() => updateBrand({ logoUrl: '' })} className="absolute top-4 right-4 p-2 bg-black/60 rounded-full text-white/40 hover:text-red-500 z-20"><X size={16} /></button>
+                            <button onClick={() => updateBrand({ logos: { ...brand.logos, main: undefined } })} className="absolute top-4 right-4 p-2 bg-black/60 rounded-full text-white/40 hover:text-red-500 z-20"><X size={16} /></button>
                           </>
                         ) : (
                           <div className="space-y-4 flex flex-col items-center">
@@ -294,14 +263,14 @@ const Onboarding: React.FC = () => {
                               const file = e.target.files?.[0];
                               if (file) {
                                 const reader = new FileReader();
-                                reader.onloadend = () => updateBrand({ logoUrl: reader.result as string });
+                                reader.onloadend = () => updateBrand({ logos: { ...brand.logos, main: reader.result as string } });
                                 reader.readAsDataURL(file);
                               }
                             }} />
                           </div>
                         )}
                       </div>
-                      {!brand.logoUrl && (
+                      {!brand.logos?.main && (
                         <div className="flex items-center gap-2 text-red-500/60 text-[10px] font-orbitron uppercase animate-pulse">
                            <AlertCircle size={12} /> Proszę wgrać logo przed kontynuacją
                         </div>
@@ -334,9 +303,36 @@ const Onboarding: React.FC = () => {
               <div className="flex gap-4">
                  <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
                  <div className="relative flex-1 group">
-                    {brand.logoUrl && <div className="absolute -right-8 top-1/2 -translate-y-1/2 w-3 h-3 bg-[#34E0F7] rounded-full nav-beacon hidden md:block" />}
-                    <NeonButton variant="magenta" className="w-full py-5 font-black" onClick={handleStepNext} disabled={!brand.logoUrl}>NASTĘPNY ETAP: VOICE</NeonButton>
+                    {brand.logos?.main && <div className="absolute -right-8 top-1/2 -translate-y-1/2 w-3 h-3 bg-[#34E0F7] rounded-full nav-beacon hidden md:block" />}
+                    <NeonButton variant="magenta" className="w-full py-5 font-black" onClick={handleStepNext} disabled={!brand.logos?.main}>NASTĘPNY ETAP: VOICE</NeonButton>
                  </div>
+              </div>
+            </motion.div>
+          )}
+
+          {/* POZOSTAŁE KROKI (2, 4, 5) POZOSTAJĄ BEZ ZMIAN W LOGICE, TYLKO SYNC DANYCH */}
+          {onboardingStep === 2 && (
+            <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
+              <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#8C4DFF]/20">
+                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest">2. DNA MARKI</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Nazwa Marki</label>
+                    <input type="text" value={brand.name} onChange={e => updateBrand({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Branża</label>
+                    <input type="text" value={brand.industry} onChange={e => updateBrand({ industry: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
+                  </div>
+                  <div className="md:col-span-2 space-y-2">
+                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Misja / Opis</label>
+                    <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF] min-h-[100px]" />
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-4">
+                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
+                 <NeonButton variant="purple" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: LOOK</NeonButton>
               </div>
             </motion.div>
           )}
@@ -346,8 +342,8 @@ const Onboarding: React.FC = () => {
               <div className="glass-panel p-6 md:p-10 rounded-3xl border-cyan-500/20">
                 <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest">4. GŁOS MARKI</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-                  {['Professional', 'Energetic', 'Casual', 'Minimalist'].map(tone => (
-                    <button key={tone} onClick={() => updateBrand({ toneOfVoice: tone.toLowerCase() })} className={`p-4 rounded-2xl border transition-all text-[10px] font-orbitron uppercase tracking-widest ${brand.toneOfVoice === tone.toLowerCase() ? 'border-[#34E0F7] bg-[#34E0F7]/10 text-[#34E0F7]' : 'border-white/5 text-white/30 hover:bg-white/5'}`}>
+                  {['premium', 'warm', 'modern', 'storyteller'].map(tone => (
+                    <button key={tone} onClick={() => updateBrand({ voiceProfile: tone as any })} className={`p-4 rounded-2xl border transition-all text-[10px] font-orbitron uppercase tracking-widest ${brand.voiceProfile === tone ? 'border-[#34E0F7] bg-[#34E0F7]/10 text-[#34E0F7]' : 'border-white/5 text-white/30 hover:bg-white/5'}`}>
                       {tone}
                     </button>
                   ))}
@@ -357,11 +353,8 @@ const Onboarding: React.FC = () => {
                      <div className={`w-16 h-16 rounded-full flex items-center justify-center transition-all ${brand.isYodaMode ? 'bg-[#8C4DFF] text-white' : 'bg-white/5 text-white/20'}`}><Sparkles size={32} /></div>
                      <div>
                         <h3 className={`text-xl font-black font-orbitron tracking-tight ${brand.isYodaMode ? 'text-[#8C4DFF]' : 'text-white'}`}>YODA MODE (PL)</h3>
-                        <p className="text-white/40 text-[10px] font-orbitron uppercase tracking-widest">Polska składnia przestawna (Np: Sushi zjeść musisz)</p>
+                        <p className="text-white/40 text-[10px] font-orbitron uppercase tracking-widest">Polska składnia przestawna</p>
                      </div>
-                  </div>
-                  <div className={`w-12 h-6 rounded-full relative ${brand.isYodaMode ? 'bg-[#8C4DFF]' : 'bg-white/10'}`}>
-                     <motion.div animate={{ x: brand.isYodaMode ? 24 : 4 }} className="absolute top-1 w-4 h-4 rounded-full bg-white shadow-lg" />
                   </div>
                 </div>
               </div>
@@ -376,7 +369,6 @@ const Onboarding: React.FC = () => {
             <motion.div key="step5" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-6 md:p-10 rounded-3xl border-white/5">
                 <h2 className="text-3xl font-black font-orbitron mb-4 text-white uppercase tracking-widest">5. WĘZŁY KOMUNIKACYJNE</h2>
-                <p className="text-white/40 text-[10px] font-orbitron mb-10 uppercase tracking-widest">Synchronizacja Satelitarna Kont Społecznościowych</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {[{ id: 'instagram', icon: <Instagram />, label: 'Instagram' }, { id: 'facebook', icon: <Facebook />, label: 'Facebook' }, { id: 'linkedin', icon: <Linkedin />, label: 'LinkedIn' }, { id: 'tiktok', icon: <Rocket />, label: 'TikTok' }].map(p => {
                     const active = socialLinks[p.id];
@@ -386,7 +378,6 @@ const Onboarding: React.FC = () => {
                             <div className={active ? 'text-[#34E0F7]' : 'text-white/20'}>{p.icon}</div>
                             <span className={`text-xs font-orbitron uppercase tracking-widest ${active ? 'text-white' : 'text-white/20'}`}>{p.label}</span>
                          </div>
-                         <div className={`text-[8px] font-orbitron px-2 py-1 rounded ${active ? 'bg-[#34E0F7]/20 text-[#34E0F7]' : 'bg-white/5 text-white/10'}`}>{active ? 'LINK_ACTIVE' : 'OFFLINE'}</div>
                       </div>
                     )
                   })}
