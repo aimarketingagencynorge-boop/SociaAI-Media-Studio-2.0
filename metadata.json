@@ -1,0 +1,8 @@
+{
+  "name": "SociAI MediA Studio",
+  "description": "A high-fidelity AI-powered social media manager with a futuristic cockpit interface, featuring website scanning and cinematic content generation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
