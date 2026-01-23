@@ -1,12 +1,11 @@
-
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
   define: {
-    // To pozwala na używanie process.env.API_KEY w kodzie frontendowym
-    'process.env': process.env
+    // Vite bezpiecznie wstrzyknie wartość zmiennej środowiskowej do kodu
+    'process.env.API_KEY': JSON.stringify(process.env.API_KEY)
   },
   server: {
     port: 3000,
