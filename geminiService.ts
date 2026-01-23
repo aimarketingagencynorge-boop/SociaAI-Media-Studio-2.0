@@ -43,16 +43,22 @@ export class GeminiService {
       NO TEXT OR LETTERS ON IMAGE. Cinematic lighting.
     `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: brandPrompt }] },
-      config: { imageConfig: { aspectRatio: "1:1" } }
-    });
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [{ text: brandPrompt }] },
+        config: { imageConfig: { aspectRatio: "1:1" } }
+      });
 
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    } catch (error) {
+      console.error("Image generation failed:", error);
     }
-    return `https://loremflickr.com/1024/1024/${brand.industry},${prompt.split(' ')[0]}?lock=${Math.random()}`;
+    
+    return `https://loremflickr.com/1024/1024/${brand.industry.split(' ')[0] || 'business'},${prompt.split(' ')[0]}?lock=${Math.floor(Math.random() * 1000)}`;
   }
 
   async scanWebsite(url: string, targetLanguage: Language) {

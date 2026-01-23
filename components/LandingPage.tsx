@@ -26,7 +26,7 @@ const LandingPage: React.FC = () => {
       y: 0, 
       transition: { 
         duration: 0.6, 
-        ease: "easeOut" as const
+        ease: "easeOut"
       } 
     }
   };
@@ -36,6 +36,7 @@ const LandingPage: React.FC = () => {
       setShowContinueDialog(true);
     } else {
       setAuthenticated(true);
+      setLanguage(language); // Ensure language is set
       setOnboardingStep(1);
     }
   };
