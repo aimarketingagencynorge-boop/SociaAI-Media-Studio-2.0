@@ -116,8 +116,9 @@ const Onboarding: React.FC = () => {
   };
 
   const finalizeMission = async () => {
+    // Sprawdzenie, czy logo główne zostało wgrane (wymagane dla spójności wizualnej)
     if (!brand.logos?.main) {
-      alert("LOGO_REQUIRED: Proszę wgrać lub zatwierdzić logo przed odpaleniem silników.");
+      alert("LOGO_REQUIRED: Proszę wgrać lub zatwierdzić logo główne przed odpaleniem silników.");
       setOnboardingStep(3);
       return;
     }
@@ -128,7 +129,7 @@ const Onboarding: React.FC = () => {
       setOnboardingStep(0); 
     } catch (e: any) {
       console.error("Autopilot failed", e);
-      alert(`Autopilot Error: Nie udało się wygenerować planu. Sprawdź połączenie.`);
+      alert(`Autopilot Error: Nie udało się wygenerować planu. Sprawdź połączenie z API.`);
     } finally {
       setAutopilotRunning(false);
     }
@@ -147,6 +148,7 @@ const Onboarding: React.FC = () => {
   };
 
   const handleStepNext = () => {
+    // Blokada kroku 3 bez logotypu
     if (onboardingStep === 3 && !brand.logos?.main) return;
     if (onboardingStep < 5) setOnboardingStep(onboardingStep + 1);
     else finalizeMission();
@@ -310,7 +312,6 @@ const Onboarding: React.FC = () => {
             </motion.div>
           )}
 
-          {/* POZOSTAŁE KROKI (2, 4, 5) POZOSTAJĄ BEZ ZMIAN W LOGICE, TYLKO SYNC DANYCH */}
           {onboardingStep === 2 && (
             <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#8C4DFF]/20">
