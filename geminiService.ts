@@ -9,6 +9,21 @@ export class GeminiService {
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
+  private getLanguageName(lang: Language): string {
+    const names: Record<Language, string> = {
+      'PL': 'Polish',
+      'EN': 'English',
+      'NO': 'Norwegian',
+      'RU': 'Russian'
+    };
+    return names[lang] || 'English';
+  }
+
+  private cleanJsonResponse(text: string): string {
+    // Usuwa bloki kodu markdown ```json ... ``` jeśli istnieją
+    return text.replace(/```json/g, '').replace(/```/g, '').trim();
+  }
+
   private getSignature(brand: BrandData): string {
     const parts = [];
     if (brand.address) parts.push(`📍 Adres: ${brand.address}`);
@@ -19,10 +34,11 @@ export class GeminiService {
 
   private getBrandContextPrompt(brand: BrandData, targetLanguage: Language): string {
     const colorString = brand.colors.map(c => `${c.name}: ${c.hex}`).join(', ');
+    const langName = this.getLanguageName(targetLanguage);
     
     return `
     --- BRAND DNA CORE ---
-    TARGET LANGUAGE: ${targetLanguage} (MANDATORY: All output text must be in this language)
+    TARGET LANGUAGE: ${langName} (MANDATORY: All output text must be in this language)
     BRAND NAME: ${brand.name}
     INDUSTRY: ${brand.industry}
     VISUAL MOOD: ${brand.voiceProfile}
@@ -62,11 +78,12 @@ export class GeminiService {
   }
 
   async scanWebsite(url: string, targetLanguage: Language) {
+    const langName = this.getLanguageName(targetLanguage);
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `You are an AI Recon Drone. Scan: ${url}. 
-      Extract brand info. MANDATORY: The "description" and "toneOfVoice" fields MUST be written in ${targetLanguage}.
-      Output ONLY a valid JSON object.`,
+      contents: `You are an AI Recon Drone. Scan this website for brand DNA: ${url}. 
+      Extract brand info. MANDATORY: The "description" and "toneOfVoice" fields MUST be written in ${langName}.
+      Output ONLY a valid JSON object. Do not include markdown formatting.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -85,21 +102,24 @@ export class GeminiService {
     });
 
     try {
-      return JSON.parse(response.text || '{}');
+      const cleaned = this.cleanJsonResponse(response.text || '{}');
+      return JSON.parse(cleaned);
     } catch (e) {
-      throw new Error("Neural scan failed.");
+      console.error("Neural scan parsing failed:", e, response.text);
+      throw new Error("Neural scan failed to parse response.");
     }
   }
 
   async generateSocialPost(topic: string, platform: string, brand: BrandData, targetLanguage: Language) {
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
+    const langName = this.getLanguageName(targetLanguage);
     
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: `${context}
       Generate a ${platform} post about: ${topic}.
-      MANDATORY: All output fields ('content', 'hook', 'hashtags') must be in ${targetLanguage}.
+      MANDATORY: All output fields ('content', 'hook', 'hashtags') must be in ${langName}.
       Return JSON with 'content', 'hook', 'imageBrief' (brief in English), 'keyword'.`,
       config: {
         responseMimeType: "application/json",
@@ -117,7 +137,7 @@ export class GeminiService {
       }
     });
 
-    const data = JSON.parse(response.text || '{}');
+    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
     const imageUrl = await this.generateImage(data.imageBrief, brand);
 
     return {
@@ -130,11 +150,12 @@ export class GeminiService {
   async generateWeeklyPlan(brand: BrandData, targetLanguage: Language, weekIndex: number = 0): Promise<SocialPost[]> {
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
+    const langName = this.getLanguageName(targetLanguage);
     
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `${context} Generate a 7-day social media plan (Mon-Sun). 
-      MANDATORY: Output text (content, hook, topic) MUST be in ${targetLanguage}. 
+      MANDATORY: Output text (content, hook, topic) MUST be in ${langName}. 
       JSON array output.`,
       config: {
         responseMimeType: "application/json",
@@ -158,7 +179,7 @@ export class GeminiService {
       }
     });
 
-    const data = JSON.parse(response.text || '[]');
+    const data = JSON.parse(this.cleanJsonResponse(response.text || '[]'));
     return await Promise.all(data.map(async (item: any) => ({
       ...item,
       id: Math.random().toString(36).substr(2, 9),
@@ -174,10 +195,11 @@ export class GeminiService {
   async generateSocialPostForDay(brand: BrandData, targetLanguage: Language, dayName: string, dayIndex: number): Promise<SocialPost> {
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
+    const langName = this.getLanguageName(targetLanguage);
     
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `${context} Generate a new post for ${dayName}. LANGUAGE MUST BE ${targetLanguage}.`,
+      contents: `${context} Generate a new post for ${dayName}. LANGUAGE MUST BE ${langName}.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -196,7 +218,7 @@ export class GeminiService {
       }
     });
 
-    const data = JSON.parse(response.text || '{}');
+    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
     const imageUrl = await this.generateImage(data.imageBrief, brand);
 
     return {
@@ -215,10 +237,11 @@ export class GeminiService {
   async refineContent(post: SocialPost, refinePrompt: string, brand: BrandData, targetLanguage: Language) {
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
+    const langName = this.getLanguageName(targetLanguage);
     
     const response = await this.ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `${context} Refine this post: ${refinePrompt}. Current Topic: ${post.topic}. MANDATORY: Output in ${targetLanguage}.`,
+      contents: `${context} Refine this post: ${refinePrompt}. Current Topic: ${post.topic}. MANDATORY: Output in ${langName}.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -234,7 +257,7 @@ export class GeminiService {
       }
     });
 
-    const data = JSON.parse(response.text || '{}');
+    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
     return {
       ...data,
       content: data.content + signature,

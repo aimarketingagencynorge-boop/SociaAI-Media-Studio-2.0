@@ -33,6 +33,17 @@ import { gemini } from '../geminiService';
 import NeonButton from './NeonButton';
 import AutopilotOverlay from './AutopilotOverlay';
 
+const YodaIcon = ({ active }: { active: boolean }) => (
+  <motion.svg 
+    width="24" height="24" viewBox="0 0 24 24" fill="none" 
+    animate={{ filter: active ? 'drop-shadow(0 0 8px #C74CFF)' : 'none' }}
+    className={`transition-colors duration-500 ${active ? 'text-[#C74CFF]' : 'text-white/20'}`}
+  >
+    <path d="M12 4C10 4 8 5 7 6C5 4 2 4 2 4C2 4 4 7 5 9C4 11 4 13 5 15C6 17 8 18 12 18C16 18 18 17 19 15C20 13 20 11 19 9C20 7 22 4 22 4C22 4 19 4 17 6C16 5 14 4 12 4Z" fill="currentColor" opacity={active ? 1 : 0.3} />
+    <path d="M9 11C9 11 10 10 12 10C14 10 15 11 15 11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </motion.svg>
+);
+
 const Onboarding: React.FC = () => {
   const { 
     language, 
@@ -42,7 +53,6 @@ const Onboarding: React.FC = () => {
     updateBrand, 
     setAutopilotRunning, 
     setWeeklyPlan, 
-    resetMission,
     socialLinks,
     toggleSocialLink
   } = useStore();
@@ -67,34 +77,22 @@ const Onboarding: React.FC = () => {
 
   const handleScan = async () => {
     if (!url) return;
-    
     setIsScanning(true);
     setScanProgress(0);
     setLogs([]);
     setScanComplete(false);
-    
-    addLog(`Initiating portal scan in language: ${brand.missionLanguage}...`);
-    
-    const scanMessages = [
-      "Deploying scanning drones...",
-      "Analyzing CSS and DOM structure...",
-      "Extracting Meta-DNA...",
-      "Decoding visual signature..."
-    ];
-    
+    addLog(`Initiating portal scan for: ${url}`);
+    addLog(`Target language set to: ${brand.missionLanguage}`);
+    const scanMessages = ["Deploying scanning drones...", "Analyzing CSS structure...", "Extracting DNA...", "Decoding visual signature..."];
     for (let i = 0; i < scanMessages.length; i++) {
       addLog(scanMessages[i]);
       setScanProgress((prev) => Math.min(prev + 25, 90));
       await new Promise(r => setTimeout(r, 600));
     }
-
     try {
-      // UŻYWAMY brand.missionLanguage zamiast UI language
       const data = await gemini.scanWebsite(url, brand.missionLanguage);
       setScanProgress(100);
-      addLog(`DNA Map extracted successfully in ${brand.missionLanguage}.`);
-      addLog(`Brand detected: ${data.name}`);
-      
+      addLog(`DNA Map extracted. Brand: ${data.name}`);
       updateBrand({
         name: data.name,
         description: data.description,
@@ -102,15 +100,11 @@ const Onboarding: React.FC = () => {
         colors: data.colors,
         toneOfVoice: data.toneOfVoice,
         toneConfidence: data.toneConfidence,
-        address: data.address || '',
-        phone: data.phone || '',
-        email: data.email || '',
         ctaLink: url
       });
-      
       setScanComplete(true);
-    } catch (e) {
-      addLog("CRITICAL_ERR: SCAN_BUFFER_OVERFLOW.");
+    } catch (e: any) {
+      addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED. ${e.message || ''}`);
     } finally {
       setIsScanning(false);
     }
@@ -118,19 +112,17 @@ const Onboarding: React.FC = () => {
 
   const finalizeMission = async () => {
     if (!brand.logos?.main) {
-      alert("LOGO_REQUIRED: Proszę wgrać lub zatwierdzić logo główne przed odpaleniem silników.");
+      alert("LOGO_REQUIRED: Proszę wgrać logo przed odpaleniem silników.");
       setOnboardingStep(3);
       return;
     }
     setAutopilotRunning(true);
     try {
-      // UŻYWAMY brand.missionLanguage
       const plan = await gemini.generateWeeklyPlan(brand, brand.missionLanguage);
       setWeeklyPlan(plan);
       setOnboardingStep(0); 
     } catch (e: any) {
-      console.error("Autopilot failed", e);
-      alert(`Autopilot Error: Nie udało się wygenerować planu. Sprawdź połączenie z API.`);
+      alert(`Autopilot Error: Nie udało się wygenerować planu.`);
     } finally {
       setAutopilotRunning(false);
     }
@@ -144,10 +136,7 @@ const Onboarding: React.FC = () => {
     { icon: <Share2 />, label: "SYNC" },
   ];
 
-  const handleStepBack = () => {
-    if (onboardingStep > 1) setOnboardingStep(onboardingStep - 1);
-  };
-
+  const handleStepBack = () => onboardingStep > 1 && setOnboardingStep(onboardingStep - 1);
   const handleStepNext = () => {
     if (onboardingStep === 3 && !brand.logos?.main) return;
     if (onboardingStep < 5) setOnboardingStep(onboardingStep + 1);
@@ -167,20 +156,10 @@ const Onboarding: React.FC = () => {
           const isCompleted = onboardingStep > stepNum;
           return (
             <div key={idx} className="relative z-10 flex flex-col items-center gap-2">
-              <motion.div 
-                animate={{ 
-                  scale: isActive ? 1.1 : 1,
-                  borderColor: isActive ? '#34E0F7' : isCompleted ? '#8C4DFF' : 'rgba(255,255,255,0.1)'
-                }}
-                className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-500 border-2
-                ${isActive ? 'bg-[#34E0F7] text-black shadow-[0_0_20px_rgba(52,224,247,0.4)]' : isCompleted ? 'bg-[#8C4DFF] text-white' : 'bg-[#0A0A12] text-white/40'}
-                `}
-              >
+              <motion.div animate={{ scale: isActive ? 1.1 : 1, borderColor: isActive ? '#34E0F7' : isCompleted ? '#8C4DFF' : 'rgba(255,255,255,0.1)' }} className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-500 border-2 ${isActive ? 'bg-[#34E0F7] text-black shadow-[0_0_20px_#34E0F7]' : isCompleted ? 'bg-[#8C4DFF] text-white' : 'bg-[#0A0A12] text-white/40'}`}>
                 {step.icon}
               </motion.div>
-              <span className={`text-[8px] font-orbitron uppercase tracking-widest ${isActive ? 'text-[#34E0F7]' : 'text-white/20'}`}>
-                {step.label}
-              </span>
+              <span className={`text-[8px] font-orbitron uppercase tracking-widest ${isActive ? 'text-[#34E0F7]' : 'text-white/20'}`}>{step.label}</span>
             </div>
           );
         })}
@@ -191,62 +170,64 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 1 && (
             <motion.div key="step1" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
               <div className="glass-panel p-6 md:p-10 rounded-3xl relative overflow-hidden border-cyan-500/20">
-                <div className="flex flex-col md:flex-row justify-between items-start mb-10 gap-4">
-                  <div>
-                    <h2 className="text-3xl md:text-4xl font-black font-orbitron mb-2 text-white">1. {t.onboarding.step1}</h2>
-                    <p className="text-white/40 text-sm font-orbitron tracking-wide uppercase">{t.onboarding.step1Desc}</p>
-                  </div>
+                <h2 className="text-3xl font-black font-orbitron mb-2 text-white">1. {t.onboarding.step1}</h2>
+                <div className="space-y-6 mt-10">
+                  <input type="text" placeholder={t.onboarding.scanPlaceholder} value={url} onChange={(e) => setUrl(e.target.value)} className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-5 outline-none focus:border-[#34E0F7] transition-all font-mono" />
+                  <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
                 </div>
-                
-                <div className="space-y-6">
-                  <div className="relative">
-                    <input type="text" placeholder={t.onboarding.scanPlaceholder} value={url} onChange={(e) => setUrl(e.target.value)} className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-5 outline-none focus:border-[#34E0F7] focus:ring-4 focus:ring-[#34E0F7]/10 transition-all font-mono text-sm tracking-wider" />
-                  </div>
-                  <NeonButton variant="cyan" className="w-full py-5 flex items-center justify-center gap-4 group text-lg" onClick={handleScan} disabled={isScanning}>
-                    {isScanning ? <Loader2 className="animate-spin" /> : <Globe size={22} className="group-hover:rotate-12 transition-transform" />}
-                    <span className="font-black">SCAN UNIVERSE</span>
-                  </NeonButton>
-                </div>
-
                 {(isScanning || logs.length > 0) && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs overflow-hidden">
-                    <div ref={consoleRef} className="max-h-40 overflow-y-auto scrollbar-hide space-y-2">
-                      {logs.map((log, i) => (
-                        <div key={i} className={i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}>{log}</div>
-                      ))}
-                    </div>
-                  </motion.div>
+                  <div className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs max-h-40 overflow-y-auto scrollbar-hide">
+                    {logs.map((log, i) => <div key={i} className={i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}>{log}</div>)}
+                  </div>
                 )}
               </div>
-
-              {scanComplete && (
-                <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="flex justify-center relative">
-                   <NeonButton variant="cyan" className="w-full py-6 text-xl font-black shadow-[0_0_50px_rgba(52,224,247,0.3)] flex items-center justify-center gap-4 group" onClick={handleStepNext}>
-                     {t.onboarding.next} <ArrowRight className="group-hover:translate-x-2 transition-transform" />
-                   </NeonButton>
-                </motion.div>
-              )}
+              {scanComplete && <NeonButton variant="cyan" className="w-full py-6 text-xl font-black" onClick={handleStepNext}>DALEJ: DNA MARKI</NeonButton>}
             </motion.div>
           )}
 
-          {/* ... reszta kroków bez zmian logicznych ... */}
+          {onboardingStep === 2 && (
+            <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
+              <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#8C4DFF]/20">
+                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">2. DNA MARKI</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Nazwa Marki</label>
+                    <input type="text" value={brand.name} onChange={e => updateBrand({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Branża</label>
+                    <input type="text" value={brand.industry} onChange={e => updateBrand({ industry: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Opis Marki (Brand Bio)</label>
+                  <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[140px] resize-none text-sm outline-none focus:border-[#8C4DFF]" />
+                </div>
+              </div>
+              <div className="flex gap-4">
+                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
+                 <NeonButton variant="purple" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: LOOK</NeonButton>
+              </div>
+            </motion.div>
+          )}
+
           {onboardingStep === 3 && (
             <motion.div key="step3" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#C74CFF]/20">
-                <h2 className="text-3xl font-black font-orbitron mb-10 text-white uppercase tracking-widest">3. TOŻSAMOŚĆ WIZUALNA</h2>
+                <h2 className="text-3xl font-black font-orbitron mb-10 text-white uppercase tracking-widest text-center">3. TOŻSAMOŚĆ WIZUALNA</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                    <div className="space-y-6">
-                      <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Logo Marki (Wymagane)</label>
-                      <div className="aspect-square glass-panel border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center p-8 text-center relative overflow-hidden group hover:border-[#34E0F7]/40 transition-all">
+                      <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Logo Główne</label>
+                      <div className="aspect-square glass-panel border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center p-8 relative overflow-hidden group">
                         {brand.logos?.main ? (
                           <>
-                            <motion.img initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} src={brand.logos.main} alt="Brand Logo" className="max-w-[80%] max-h-[80%] object-contain relative z-10 glow-cyan" />
-                            <button onClick={() => updateBrand({ logos: { ...brand.logos, main: undefined } })} className="absolute top-4 right-4 p-2 bg-black/60 rounded-full text-white/40 hover:text-red-500 z-20"><X size={16} /></button>
+                            <img src={brand.logos.main} className="max-w-[80%] max-h-[80%] object-contain glow-cyan" alt="Logo" />
+                            <button onClick={() => updateBrand({ logos: { ...brand.logos, main: undefined } })} className="absolute top-4 right-4 text-white/40 hover:text-red-500"><X /></button>
                           </>
                         ) : (
-                          <div className="space-y-4 flex flex-col items-center">
-                            <CloudUpload size={32} className="text-[#34E0F7]" />
-                            <p className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Wgraj Logo Marki</p>
+                          <div className="flex flex-col items-center gap-4 cursor-pointer relative">
+                            <CloudUpload size={40} className="text-[#34E0F7]" />
+                            <span className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">UPLOAD LOGO</span>
                             <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
@@ -260,22 +241,14 @@ const Onboarding: React.FC = () => {
                       </div>
                    </div>
                    <div className="space-y-6">
-                      <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Paleta Kolorów</label>
-                      <div className="space-y-4">
-                        {brand.colors.map((color, idx) => (
-                          <div key={idx} className="flex items-center gap-4 p-4 glass-panel border-white/10 rounded-2xl group">
-                            <input type="color" value={color.hex} onChange={e => {
-                                const newColors = [...brand.colors];
-                                newColors[idx].hex = e.target.value;
-                                updateBrand({ colors: newColors });
-                            }} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-lg" />
-                            <div className="flex-1">
-                                <input type="text" value={color.name} onChange={e => {
-                                    const newColors = [...brand.colors];
-                                    newColors[idx].name = e.target.value;
-                                    updateBrand({ colors: newColors });
-                                }} className="bg-transparent border-none text-[10px] font-orbitron uppercase tracking-widest outline-none text-white/80 w-full" />
-                            </div>
+                      <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Paleta Kolorów</label>
+                      <div className="grid grid-cols-1 gap-4">
+                        {brand.colors.map((c, i) => (
+                          <div key={i} className="flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10">
+                            <input type="color" value={c.hex} onChange={e => {
+                                const nc = [...brand.colors]; nc[i].hex = e.target.value; updateBrand({ colors: nc });
+                            }} className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-none" />
+                            <span className="text-[10px] font-orbitron text-white/60 uppercase">{c.name}</span>
                           </div>
                         ))}
                       </div>
@@ -283,30 +256,8 @@ const Onboarding: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-4">
-                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
+                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
                  <NeonButton variant="magenta" className="flex-1 py-5 font-black" onClick={handleStepNext} disabled={!brand.logos?.main}>NASTĘPNY ETAP: VOICE</NeonButton>
-              </div>
-            </motion.div>
-          )}
-
-          {onboardingStep === 2 && (
-            <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#8C4DFF]/20">
-                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest">2. DNA MARKI</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Nazwa Marki</label>
-                    <input type="text" value={brand.name} onChange={e => updateBrand({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Branża</label>
-                    <input type="text" value={brand.industry} onChange={e => updateBrand({ industry: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-4">
-                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
-                 <NeonButton variant="purple" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: LOOK</NeonButton>
               </div>
             </motion.div>
           )}
@@ -314,7 +265,7 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 4 && (
             <motion.div key="step4" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-6 md:p-10 rounded-3xl border-cyan-500/20">
-                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest">4. GŁOS MARKI</h2>
+                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">4. GŁOS MARKI</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                   {['premium', 'warm', 'modern', 'storyteller'].map(tone => (
                     <button key={tone} onClick={() => updateBrand({ voiceProfile: tone as any })} className={`p-4 rounded-2xl border transition-all text-[10px] font-orbitron uppercase tracking-widest ${brand.voiceProfile === tone ? 'border-[#34E0F7] bg-[#34E0F7]/10 text-[#34E0F7]' : 'border-white/5 text-white/30 hover:bg-white/5'}`}>
@@ -322,9 +273,21 @@ const Onboarding: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                <div className="flex items-center justify-between p-8 bg-[#C74CFF]/5 border border-[#C74CFF]/30 rounded-[2rem] cursor-pointer hover:bg-[#C74CFF]/10 transition-all" onClick={() => updateBrand({ isYodaMode: !brand.isYodaMode })}>
+                   <div className="flex items-center gap-6">
+                      <YodaIcon active={brand.isYodaMode} />
+                      <div>
+                        <span className={`text-[11px] font-orbitron uppercase tracking-[0.2em] font-black block ${brand.isYodaMode ? 'text-[#C74CFF]' : 'text-white/40'}`}>TRYB MISTRZA YODY</span>
+                        <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">Force-aligned grammar override</span>
+                      </div>
+                   </div>
+                   <div className={`w-12 h-6 rounded-full relative transition-colors ${brand.isYodaMode ? 'bg-[#C74CFF]' : 'bg-white/10'}`}>
+                      <motion.div animate={{ x: brand.isYodaMode ? 26 : 4 }} className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg" />
+                   </div>
+                </div>
               </div>
               <div className="flex gap-4">
-                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
+                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
                  <NeonButton variant="cyan" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: SYNC</NeonButton>
               </div>
             </motion.div>
@@ -333,24 +296,21 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 5 && (
             <motion.div key="step5" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-6 md:p-10 rounded-3xl border-white/5">
-                <h2 className="text-3xl font-black font-orbitron mb-4 text-white uppercase tracking-widest">5. WĘZŁY KOMUNIKACYJNE</h2>
+                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">5. WĘZŁY KOMUNIKACYJNE</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {[{ id: 'instagram', icon: <Instagram />, label: 'Instagram' }, { id: 'facebook', icon: <Facebook />, label: 'Facebook' }, { id: 'linkedin', icon: <Linkedin />, label: 'LinkedIn' }, { id: 'tiktok', icon: <Rocket />, label: 'TikTok' }].map(p => {
-                    const active = socialLinks[p.id as keyof typeof socialLinks];
-                    return (
-                      <div key={p.id} onClick={() => toggleSocialLink(p.id)} className={`p-6 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${active ? 'border-[#34E0F7] bg-[#34E0F7]/5' : 'border-white/5 hover:border-white/10'}`}>
-                         <div className="flex items-center gap-4">
-                            <div className={active ? 'text-[#34E0F7]' : 'text-white/20'}>{p.icon}</div>
-                            <span className={`text-xs font-orbitron uppercase tracking-widest ${active ? 'text-white' : 'text-white/20'}`}>{p.label}</span>
-                         </div>
+                  {[{ id: 'instagram', icon: <Instagram />, label: 'Instagram' }, { id: 'facebook', icon: <Facebook />, label: 'Facebook' }, { id: 'linkedin', icon: <Linkedin />, label: 'LinkedIn' }, { id: 'tiktok', icon: <Rocket />, label: 'TikTok' }].map(p => (
+                    <div key={p.id} onClick={() => toggleSocialLink(p.id)} className={`p-6 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${socialLinks[p.id as keyof typeof socialLinks] ? 'border-[#34E0F7] bg-[#34E0F7]/5' : 'border-white/5'}`}>
+                      <div className="flex items-center gap-4">
+                        <div className={socialLinks[p.id as keyof typeof socialLinks] ? 'text-[#34E0F7]' : 'text-white/20'}>{p.icon}</div>
+                        <span className="text-xs font-orbitron uppercase tracking-widest">{p.label}</span>
                       </div>
-                    )
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
               <div className="flex gap-4">
-                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
-                 <NeonButton variant="cyan" className="flex-1 py-6 font-black text-xl shadow-[0_0_50px_rgba(52,224,247,0.4)] flex items-center justify-center gap-4" onClick={finalizeMission}>ODPAL MISJĘ <Rocket size={24} /></NeonButton>
+                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
+                 <NeonButton variant="cyan" className="flex-1 py-6 font-black text-xl shadow-[0_0_50px_rgba(52,224,247,0.4)]" onClick={finalizeMission}>ODPAL MISJĘ <Rocket className="ml-2 inline" /></NeonButton>
               </div>
             </motion.div>
           )}
