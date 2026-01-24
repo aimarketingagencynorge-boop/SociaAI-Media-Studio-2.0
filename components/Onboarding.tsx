@@ -81,30 +81,35 @@ const Onboarding: React.FC = () => {
     setScanProgress(0);
     setLogs([]);
     setScanComplete(false);
-    addLog(`Initiating portal scan for: ${url}`);
-    addLog(`Target language set to: ${brand.missionLanguage}`);
-    const scanMessages = ["Deploying scanning drones...", "Analyzing CSS structure...", "Extracting DNA...", "Decoding visual signature..."];
-    for (let i = 0; i < scanMessages.length; i++) {
-      addLog(scanMessages[i]);
-      setScanProgress((prev) => Math.min(prev + 25, 90));
-      await new Promise(r => setTimeout(r, 600));
-    }
+    
+    addLog(`Targeting portal: ${url}`);
+    addLog(`Deploying Search Drones...`);
+    
     try {
+      setScanProgress(30);
+      addLog("Analyzing website structure via Google Grounding...");
       const data = await gemini.scanWebsite(url, brand.missionLanguage);
-      setScanProgress(100);
-      addLog(`DNA Map extracted. Brand: ${data.name}`);
+      
+      setScanProgress(70);
+      addLog(`DNA Map extracted successfully.`);
+      addLog(`Brand detected: ${data.name}`);
+      addLog(`Description length: ${data.description?.length || 0} chars`);
+      
       updateBrand({
         name: data.name,
-        description: data.description,
-        industry: data.industry,
-        colors: data.colors,
-        toneOfVoice: data.toneOfVoice,
-        toneConfidence: data.toneConfidence,
+        description: data.description || '',
+        industry: data.industry || '',
+        colors: data.colors || brand.colors,
+        toneOfVoice: data.toneOfVoice || '',
+        toneConfidence: data.toneConfidence || 0,
         ctaLink: url
       });
+      
+      setScanProgress(100);
       setScanComplete(true);
     } catch (e: any) {
-      addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED. ${e.message || ''}`);
+      addLog(`CRITICAL_ERR: SIGNAL_LOST.`);
+      addLog(`Details: ${e.message || 'Check your internet connection or URL.'}`);
     } finally {
       setIsScanning(false);
     }
@@ -128,14 +133,6 @@ const Onboarding: React.FC = () => {
     }
   };
 
-  const steps = [
-    { icon: <Globe />, label: "SCAN" },
-    { icon: <Briefcase />, label: "DNA" },
-    { icon: <Palette />, label: "LOOK" },
-    { icon: <Mic2 />, label: "VOICE" },
-    { icon: <Share2 />, label: "SYNC" },
-  ];
-
   const handleStepBack = () => onboardingStep > 1 && setOnboardingStep(onboardingStep - 1);
   const handleStepNext = () => {
     if (onboardingStep === 3 && !brand.logos?.main) return;
@@ -150,16 +147,15 @@ const Onboarding: React.FC = () => {
       {/* STEP HUD */}
       <div className="w-full max-w-4xl mb-12 relative flex justify-between items-center bg-black/40 p-4 rounded-2xl border border-white/5 backdrop-blur-md">
         <div className="absolute top-1/2 left-8 right-8 h-[1px] bg-white/5 -translate-y-1/2" />
-        {steps.map((step, idx) => {
+        {[<Globe />, <Briefcase />, <Palette />, <Mic2 />, <Share2 />].map((icon, idx) => {
           const stepNum = idx + 1;
           const isActive = onboardingStep === stepNum;
           const isCompleted = onboardingStep > stepNum;
           return (
             <div key={idx} className="relative z-10 flex flex-col items-center gap-2">
               <motion.div animate={{ scale: isActive ? 1.1 : 1, borderColor: isActive ? '#34E0F7' : isCompleted ? '#8C4DFF' : 'rgba(255,255,255,0.1)' }} className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-500 border-2 ${isActive ? 'bg-[#34E0F7] text-black shadow-[0_0_20px_#34E0F7]' : isCompleted ? 'bg-[#8C4DFF] text-white' : 'bg-[#0A0A12] text-white/40'}`}>
-                {step.icon}
+                {icon}
               </motion.div>
-              <span className={`text-[8px] font-orbitron uppercase tracking-widest ${isActive ? 'text-[#34E0F7]' : 'text-white/20'}`}>{step.label}</span>
             </div>
           );
         })}
@@ -169,10 +165,11 @@ const Onboarding: React.FC = () => {
         <AnimatePresence mode="wait">
           {onboardingStep === 1 && (
             <motion.div key="step1" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
-              <div className="glass-panel p-6 md:p-10 rounded-3xl relative overflow-hidden border-cyan-500/20">
+              <div className="glass-panel p-10 rounded-3xl border-cyan-500/20">
                 <h2 className="text-3xl font-black font-orbitron mb-2 text-white">1. {t.onboarding.step1}</h2>
-                <div className="space-y-6 mt-10">
-                  <input type="text" placeholder={t.onboarding.scanPlaceholder} value={url} onChange={(e) => setUrl(e.target.value)} className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-5 outline-none focus:border-[#34E0F7] transition-all font-mono" />
+                <p className="text-white/40 text-xs font-orbitron uppercase tracking-widest mb-10">{t.onboarding.step1Desc}</p>
+                <div className="space-y-6">
+                  <input type="text" placeholder={t.onboarding.scanPlaceholder} value={url} onChange={(e) => setUrl(e.target.value)} className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-6 outline-none focus:border-[#34E0F7] transition-all font-mono text-sm" />
                   <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
                 </div>
                 {(isScanning || logs.length > 0) && (
@@ -187,7 +184,7 @@ const Onboarding: React.FC = () => {
 
           {onboardingStep === 2 && (
             <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#8C4DFF]/20">
+              <div className="glass-panel p-10 rounded-3xl border-[#8C4DFF]/20">
                 <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">2. DNA MARKI</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                   <div className="space-y-2">
@@ -201,19 +198,20 @@ const Onboarding: React.FC = () => {
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Opis Marki (Brand Bio)</label>
-                  <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[140px] resize-none text-sm outline-none focus:border-[#8C4DFF]" />
+                  <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} placeholder="Szczegółowy opis marki, który AI wykorzysta do tworzenia treści..." className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[160px] resize-none text-sm outline-none focus:border-[#8C4DFF]" />
                 </div>
               </div>
               <div className="flex gap-4">
-                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
+                 <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
                  <NeonButton variant="purple" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: LOOK</NeonButton>
               </div>
             </motion.div>
           )}
 
+          {/* Steps 3, 4, 5 are already preserved in the state from previous turn */}
           {onboardingStep === 3 && (
             <motion.div key="step3" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-6 md:p-10 rounded-3xl border-[#C74CFF]/20">
+              <div className="glass-panel p-10 rounded-3xl border-[#C74CFF]/20">
                 <h2 className="text-3xl font-black font-orbitron mb-10 text-white uppercase tracking-widest text-center">3. TOŻSAMOŚĆ WIZUALNA</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                    <div className="space-y-6">
@@ -264,7 +262,7 @@ const Onboarding: React.FC = () => {
 
           {onboardingStep === 4 && (
             <motion.div key="step4" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-6 md:p-10 rounded-3xl border-cyan-500/20">
+              <div className="glass-panel p-10 rounded-3xl border-cyan-500/20">
                 <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">4. GŁOS MARKI</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                   {['premium', 'warm', 'modern', 'storyteller'].map(tone => (
@@ -278,11 +276,11 @@ const Onboarding: React.FC = () => {
                       <YodaIcon active={brand.isYodaMode} />
                       <div>
                         <span className={`text-[11px] font-orbitron uppercase tracking-[0.2em] font-black block ${brand.isYodaMode ? 'text-[#C74CFF]' : 'text-white/40'}`}>TRYB MISTRZA YODY</span>
-                        <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">Force-aligned grammar override</span>
+                        <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">Inverted syntax mode</span>
                       </div>
                    </div>
                    <div className={`w-12 h-6 rounded-full relative transition-colors ${brand.isYodaMode ? 'bg-[#C74CFF]' : 'bg-white/10'}`}>
-                      <motion.div animate={{ x: brand.isYodaMode ? 26 : 4 }} className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg" />
+                      <motion.div animate={{ x: brand.isYodaMode ? 26 : 4 }} className="absolute top-1 w-4 h-4 bg-white rounded-full" />
                    </div>
                 </div>
               </div>
@@ -295,14 +293,13 @@ const Onboarding: React.FC = () => {
 
           {onboardingStep === 5 && (
             <motion.div key="step5" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-6 md:p-10 rounded-3xl border-white/5">
+              <div className="glass-panel p-10 rounded-3xl border-white/5">
                 <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">5. WĘZŁY KOMUNIKACYJNE</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {[{ id: 'instagram', icon: <Instagram />, label: 'Instagram' }, { id: 'facebook', icon: <Facebook />, label: 'Facebook' }, { id: 'linkedin', icon: <Linkedin />, label: 'LinkedIn' }, { id: 'tiktok', icon: <Rocket />, label: 'TikTok' }].map(p => (
-                    <div key={p.id} onClick={() => toggleSocialLink(p.id)} className={`p-6 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${socialLinks[p.id as keyof typeof socialLinks] ? 'border-[#34E0F7] bg-[#34E0F7]/5' : 'border-white/5'}`}>
+                  {['instagram', 'facebook', 'linkedin', 'tiktok'].map(p => (
+                    <div key={p} onClick={() => toggleSocialLink(p)} className={`p-6 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${socialLinks[p as keyof typeof socialLinks] ? 'border-[#34E0F7] bg-[#34E0F7]/5' : 'border-white/5'}`}>
                       <div className="flex items-center gap-4">
-                        <div className={socialLinks[p.id as keyof typeof socialLinks] ? 'text-[#34E0F7]' : 'text-white/20'}>{p.icon}</div>
-                        <span className="text-xs font-orbitron uppercase tracking-widest">{p.label}</span>
+                        <span className="text-xs font-orbitron uppercase tracking-widest">{p}</span>
                       </div>
                     </div>
                   ))}
