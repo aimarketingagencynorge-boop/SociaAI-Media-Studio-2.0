@@ -19,6 +19,7 @@ export interface BrandData {
   industry: string;
   toneOfVoice: string;
   isYodaMode: boolean;
+  missionLanguage: Language; // Nowe pole
   colors: BrandColor[];
   toneConfidence: number;
   logos: {
@@ -46,16 +47,16 @@ export interface BrandData {
 
 export interface SocialPost {
   id: string;
-  weekIndex: number; // For infinite scroll support
-  dayIndex: number; // 0 (Mon) to 6 (Sun)
+  weekIndex: number; 
+  dayIndex: number; 
   platform: 'facebook' | 'instagram' | 'twitter' | 'linkedin' | 'tiktok';
   topic: string;
-  hook: string; // The "Scroll-stopper" short text (UI overlay)
+  hook: string; 
   content: string;
   hashtags: string[];
   status: 'draft' | 'scheduled' | 'sent';
   isApproved: boolean;
-  imageBrief: string; // Description for AI Image Generation (no-text brief)
+  imageBrief: string; 
   imagePrompt?: string; 
   imagePreviewUrl?: string; 
   showHook?: boolean;

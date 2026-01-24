@@ -22,12 +22,13 @@ import {
   Plus,
   ShieldCheck,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Globe
 } from 'lucide-react';
 import { useStore } from '../store';
 import { translations } from '../i18n';
 import NeonButton from './NeonButton';
-import { BrandAsset } from '../types';
+import { BrandAsset, Language } from '../types';
 
 const BrandKit: React.FC = () => {
   const { 
@@ -94,7 +95,6 @@ const BrandKit: React.FC = () => {
 
   const handleSyncDNA = () => {
     setIsSyncing(true);
-    // Symulacja archiwizacji DNA w chmurze AI
     setTimeout(() => {
       setIsSyncing(false);
       setShowToast(true);
@@ -110,6 +110,8 @@ const BrandKit: React.FC = () => {
     { id: 'corporate', label: 'Corporate & Clean', icon: <Target size={18} />, desc: 'B2B i klarowność.' }
   ];
 
+  const languages: Language[] = ['PL', 'EN', 'NO', 'RU'];
+
   return (
     <div className="h-screen overflow-y-auto custom-scrollbar relative bg-transparent">
       <div className="p-8 lg:p-12 max-w-[1500px] mx-auto space-y-16 pb-48">
@@ -120,7 +122,7 @@ const BrandKit: React.FC = () => {
           
           <div className="relative z-10 space-y-3">
             <div className="flex items-center gap-4 text-[10px] font-mono text-[#34E0F7] uppercase tracking-[0.5em] font-black mb-1">
-               <ShieldCheck size={14} /> DNA_SYNC: {isSyncing ? 'SYNCHRONIZING...' : 'OPERATIONAL'} | STORAGE: ENCRYPTED
+               <ShieldCheck size={14} /> DNA_SYNC: {isSyncing ? 'SYNCHRONIZING...' : 'OPERATIONAL'} | MISSION_LANG: {brand.missionLanguage}
             </div>
             <h2 className="text-4xl md:text-5xl font-black font-orbitron tracking-tight text-white leading-none">
               SociAI MediA Studio : <span className="text-[#34E0F7]">Brand Kit</span>
@@ -157,8 +159,6 @@ const BrandKit: React.FC = () => {
 
         {/* SEKCJA 1: LOGO VAULT & VISUAL ASSETS */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-          
-          {/* Logo Vault (Left Side) */}
           <section className="lg:col-span-4 glass-panel p-10 rounded-[2.5rem] border-white/10 flex flex-col space-y-8 bg-black/20">
              <div className="flex items-center gap-4 border-b border-white/5 pb-6">
                 <Shield size={22} className="text-[#8C4DFF] glow-purple" />
@@ -196,7 +196,6 @@ const BrandKit: React.FC = () => {
              </div>
           </section>
 
-          {/* Visual Library (Right Side) */}
           <section className="lg:col-span-8 glass-panel p-10 rounded-[2.5rem] border-white/10 flex flex-col bg-black/20">
              <div className="flex flex-col sm:flex-row items-center justify-between mb-10 border-b border-white/5 pb-8 gap-6">
                 <div className="flex items-center gap-5">
@@ -236,16 +235,7 @@ const BrandKit: React.FC = () => {
                      </select>
                   </div>
                 ))}
-                {[...Array(Math.max(0, 10 - (brand.assets?.length || 0)))].map((_, i) => (
-                  <div key={i} className="aspect-square rounded-2xl border-2 border-dashed border-white/5 flex flex-col items-center justify-center opacity-10 hover:opacity-30 hover:border-[#34E0F7]/40 transition-all cursor-pointer relative group">
-                     <Plus size={32} className="group-hover:scale-110 transition-transform" />
-                     <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleAssetUpload} />
-                  </div>
-                ))}
              </div>
-             <p className="mt-10 p-6 bg-[#34E0F7]/5 rounded-2xl border border-[#34E0F7]/10 text-[10px] font-orbitron text-[#34E0F7]/60 uppercase tracking-[0.2em] italic leading-relaxed">
-               * WAŻNE: Wgrane asety zostaną wykorzystane jako referencje stylistyczne dla silników Google Veo i Gemini Flash Image, zapewniając spójność wizualną każdej generowanej treści.
-             </p>
           </section>
         </div>
 
@@ -275,27 +265,12 @@ const BrandKit: React.FC = () => {
                       <div className="text-[11px] font-orbitron uppercase tracking-[0.2em] font-black">{v.label}</div>
                       <div className="text-[9px] font-inter opacity-60 leading-tight">{v.desc}</div>
                    </div>
-                   {brand.voiceProfile === v.id && (
-                     <motion.div layoutId="profile-glow" className="absolute -bottom-1 w-full h-1 bg-[#C74CFF] blur-md shadow-[0_0_20px_#C74CFF]" />
-                   )}
                 </button>
               ))}
            </div>
-
-           <div className="space-y-5">
-              <div className="flex items-center gap-3 text-[11px] font-orbitron text-[#C74CFF] uppercase tracking-[0.3em] font-black">
-                 <Users size={16} /> Relacja z ludźmi (Human Touch Protocol)
-              </div>
-              <textarea 
-                value={brand.humanTouch}
-                onChange={(e) => updateBrand({ humanTouch: e.target.value })}
-                placeholder="Np: Zespół traktujemy jak rodzinę, gości jak przyjaciół domu. Piszemy ciepło, ale profesjonalnie, unikając sztywnego korpomówienia."
-                className="w-full bg-black/60 border border-white/10 rounded-[1.5rem] p-8 text-[13px] leading-relaxed text-white/80 outline-none focus:border-[#C74CFF] transition-all min-h-[160px] font-inter shadow-inner custom-scrollbar"
-              />
-           </div>
         </section>
 
-        {/* SEKCJA 3: DNA INTEL (SCROLLABLE DETAILS) */}
+        {/* SEKCJA 3: DNA INTEL & JĘZYK MISJI */}
         <section className="glass-panel rounded-[3rem] border-white/10 overflow-hidden flex flex-col bg-black/40 border-l-4 border-l-[#34E0F7] shadow-2xl">
           <div className="p-10 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
              <div className="flex items-center gap-5">
@@ -307,15 +282,28 @@ const BrandKit: React.FC = () => {
                   <p className="text-[9px] font-mono text-white/20 uppercase tracking-widest mt-1">Parametry tekstowe i pozycjonowanie marki</p>
                 </div>
              </div>
-             <div className="flex items-center gap-3 px-4 py-2 bg-[#34E0F7]/10 rounded-full border border-[#34E0F7]/20">
-                <span className="animate-pulse w-2 h-2 rounded-full bg-[#34E0F7] glow-cyan" />
-                <span className="text-[9px] font-mono text-[#34E0F7] font-black tracking-widest">REAL_TIME_SYNC: ON</span>
-             </div>
           </div>
 
           <div className="p-10 space-y-12">
-             
-             {/* Core Mission */}
+             {/* JĘZYK MISJI - NOWA SEKCJA */}
+             <div className="space-y-6">
+                <label className="text-[11px] font-orbitron text-[#34E0F7] uppercase tracking-widest flex items-center gap-3 font-black">
+                  <Globe size={16} /> JĘZYK GENEROWANIA TREŚCI (MISSION_LANGUAGE)
+                </label>
+                <div className="flex flex-wrap gap-4">
+                  {languages.map((lang) => (
+                    <button
+                      key={lang}
+                      onClick={() => updateBrand({ missionLanguage: lang })}
+                      className={`flex-1 min-w-[120px] py-4 rounded-2xl border-2 transition-all font-orbitron font-black text-xs tracking-widest ${brand.missionLanguage === lang ? 'border-[#34E0F7] bg-[#34E0F7]/10 text-[#34E0F7] shadow-[0_0_20px_rgba(52,224,247,0.2)]' : 'border-white/5 text-white/20 hover:border-white/10'}`}
+                    >
+                      {lang === 'PL' ? 'POLSKI' : lang === 'EN' ? 'ENGLISH' : lang === 'NO' ? 'NORSK' : 'RUSSIAN'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[9px] font-mono text-white/20 uppercase tracking-widest">Wybierz język, w którym Gemini będzie tworzyć Twoje posty, niezależnie od języka interfejsu.</p>
+             </div>
+
              <div className="space-y-4 max-w-3xl">
                 <label className="text-[11px] font-orbitron text-white/40 uppercase tracking-widest flex items-center gap-3 font-black">
                   <Target size={16} className="text-[#34E0F7]"/> Marka w jednym zdaniu (Core Mission)
@@ -329,7 +317,6 @@ const BrandKit: React.FC = () => {
                 />
              </div>
 
-             {/* Filary Marki */}
              <div className="space-y-4">
                 <label className="text-[11px] font-orbitron text-white/40 uppercase tracking-widest flex items-center gap-3 font-black">
                   <Hexagon size={16} className="text-[#34E0F7]"/> 3 Filary Marki (Główne Wartości)
@@ -353,89 +340,8 @@ const BrandKit: React.FC = () => {
                   ))}
                 </div>
              </div>
-
-             {/* Słownik Marki */}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="space-y-4">
-                  <label className="text-[11px] font-orbitron text-[#34E0F7] uppercase tracking-widest flex items-center gap-3 font-black">Słowa kluczowe (Używaj często)</label>
-                  <textarea 
-                    value={brand.dictionary?.keywords?.join(', ') || ''}
-                    onChange={(e) => updateBrand({ dictionary: { ...brand.dictionary, keywords: e.target.value.split(',').map(s => s.trim()) } })}
-                    placeholder="świeżość, pasja, rzemiosło, tradycja, jakość..."
-                    className="w-full bg-white/5 border border-[#34E0F7]/20 rounded-2xl p-6 text-[12px] font-mono focus:border-[#34E0F7] outline-none min-h-[140px] text-white/70 shadow-inner custom-scrollbar"
-                  />
-                </div>
-                <div className="space-y-4">
-                  <label className="text-[11px] font-orbitron text-red-500/60 uppercase tracking-widest flex items-center gap-3 font-black">Słowa zakazane (Unikaj kategorycznie)</label>
-                  <textarea 
-                    value={brand.dictionary?.forbidden?.join(', ') || ''}
-                    onChange={(e) => updateBrand({ dictionary: { ...brand.dictionary, forbidden: e.target.value.split(',').map(s => s.trim()) } })}
-                    placeholder="tanio, szybko, byle jak, standardowo..."
-                    className="w-full bg-white/5 border border-red-500/20 rounded-2xl p-6 text-[12px] font-mono focus:border-red-500 outline-none min-h-[140px] text-white/70 shadow-inner custom-scrollbar"
-                  />
-                </div>
-             </div>
-
-             {/* Emoji & CTA Styles */}
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-12 pt-4">
-                <div className="space-y-6">
-                  <div className="flex justify-between items-center text-[11px] font-orbitron text-white/40 uppercase tracking-widest font-black">
-                    <span>Ekspresja Emoji</span>
-                    <span className="text-[#34E0F7]">{brand.emojiStyle < 33 ? 'MINIMAL' : brand.emojiStyle < 66 ? 'ZBALANSOWANY' : 'EKSPRESYJNY'}</span>
-                  </div>
-                  <div className="relative pt-2">
-                    <input 
-                      type="range" min="0" max="100" 
-                      value={brand.emojiStyle || 50}
-                      onChange={(e) => updateBrand({ emojiStyle: parseInt(e.target.value) })}
-                      className="w-full h-1.5 bg-white/10 rounded-full appearance-none accent-[#34E0F7] cursor-pointer"
-                    />
-                    <div className="flex justify-between mt-2 text-[8px] font-mono text-white/10">
-                      <span>0%</span>
-                      <span>50%</span>
-                      <span>100%</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-5">
-                  <label className="text-[11px] font-orbitron text-white/40 uppercase tracking-widest font-black">Styl CTA (Wezwanie do działania)</label>
-                  <div className="flex gap-4">
-                    {['delicate', 'educational', 'direct'].map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => updateBrand({ ctaStyle: s as any })}
-                        className={`flex-1 py-4 rounded-xl text-[10px] font-orbitron uppercase tracking-widest border transition-all font-black ${brand.ctaStyle === s ? 'border-[#34E0F7] bg-[#34E0F7]/10 text-[#34E0F7] shadow-[0_0_15px_rgba(52,224,247,0.1)]' : 'border-white/5 text-white/20 hover:border-white/10 hover:text-white/40'}`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-             </div>
-
-             {/* Mission Context */}
-             <div className="space-y-5 max-w-md">
-                <label className="text-[11px] font-orbitron text-[#34E0F7] uppercase tracking-widest font-black">DOMYŚLNY KONTEKST KOMUNIKACJI</label>
-                <div className="relative">
-                  <select 
-                    value={brand.missionContext}
-                    onChange={(e) => updateBrand({ missionContext: e.target.value as any })}
-                    className="w-full bg-black/60 border border-[#34E0F7]/40 rounded-2xl p-5 text-[11px] font-orbitron uppercase text-[#34E0F7] outline-none cursor-pointer hover:bg-[#34E0F7]/10 transition-colors appearance-none font-black"
-                  >
-                    <option value="ig">Post / Reels (Instagram)</option>
-                    <option value="fb">Aktualność / News (Facebook)</option>
-                    <option value="li">Profesjonalny / Thought Leader (LinkedIn)</option>
-                    <option value="ad">Sprzedażowy / Conversion Ad</option>
-                  </select>
-                  <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-[#34E0F7]/40">
-                     <Plus size={14} className="rotate-45" />
-                  </div>
-                </div>
-             </div>
           </div>
 
-          {/* Section Footer / Save Button */}
           <div className="p-10 border-t border-white/5 bg-black/80 flex items-center justify-between">
              <div className="flex items-center gap-4 text-white/20 text-[10px] font-mono uppercase tracking-[0.3em] font-black">
                 <Rocket size={18} className="animate-pulse" /> NEURAL_DNA_SYNC_READY_FOR_GALAXY
@@ -452,20 +358,13 @@ const BrandKit: React.FC = () => {
           </div>
         </section>
 
-        {/* FOOTER */}
         <footer className="mt-20 py-24 text-center border-t border-white/5 space-y-4">
           <p className="text-white/10 text-[10px] font-mono tracking-[0.5em] uppercase font-black">
             SociAI MediA Studio | {t.footer} | <span className="text-[#34E0F7]/40">{t.slogan}</span>
           </p>
-          <div className="flex justify-center gap-6 opacity-5">
-             <ShieldCheck size={20} />
-             <RefreshCw size={20} />
-             <Zap size={20} />
-          </div>
         </footer>
       </div>
 
-      {/* SYNC TOAST */}
       <AnimatePresence>
         {showToast && (
           <motion.div
@@ -479,7 +378,7 @@ const BrandKit: React.FC = () => {
             </div>
             <div>
                <p className="font-orbitron text-sm uppercase tracking-widest text-[#34E0F7] font-black">KOORDYNATY MARKI ZAPISANE</p>
-               <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest">Silnik AI został poprawnie skalibrowany.</p>
+               <p className="text-[10px] font-mono text-white/40 uppercase tracking-widest">Silnik AI został skalibrowany na język: {brand.missionLanguage}.</p>
             </div>
           </motion.div>
         )}

@@ -42,6 +42,7 @@ const INITIAL_BRAND_DATA: BrandData = {
   industry: '',
   toneOfVoice: 'professional',
   isYodaMode: false,
+  missionLanguage: 'PL', // Domyślny inicjalny
   colors: [
     { name: 'Primary Neon', hex: '#8C4DFF' },
     { name: 'Secondary Cyan', hex: '#34E0F7' },
@@ -69,9 +70,6 @@ const INITIAL_BRAND_DATA: BrandData = {
   missionContext: 'ig'
 };
 
-/**
- * Robust IndexedDB Storage for Zustand to bypass 5MB LocalStorage limit.
- */
 const indexedDBStorage: StateStorage = {
   getItem: async (name: string): Promise<string | null> => {
     return new Promise((resolve, reject) => {
@@ -151,7 +149,10 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
       brand: INITIAL_BRAND_DATA,
       posts: [],
 
-      setLanguage: (language) => set({ language }),
+      setLanguage: (language) => set((state) => ({ 
+        language, 
+        brand: { ...state.brand, missionLanguage: language } // Sync mission lang with UI lang by default
+      })),
       setCredits: (credits) => set({ credits }),
       addCredits: (amount) => set((state) => ({ credits: state.credits + amount })),
       deductCredits: (amount) => {
@@ -193,7 +194,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
         onboardingStep: 1,
         posts: [],
         editingPost: null,
-        brand: INITIAL_BRAND_DATA
+        brand: { ...INITIAL_BRAND_DATA, missionLanguage: get().language }
       }),
     }),
     {

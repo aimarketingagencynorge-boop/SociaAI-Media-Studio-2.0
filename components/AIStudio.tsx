@@ -45,7 +45,8 @@ const AIStudio: React.FC = () => {
     
     try {
       const brandContext = { ...brand, isYodaMode: yodaMode };
-      const data = await gemini.generateSocialPost(topic, platform, brandContext, language);
+      // UŻYWAMY brand.missionLanguage zamiast UI language
+      const data = await gemini.generateSocialPost(topic, platform, brandContext, brand.missionLanguage);
       setResult(data);
     } catch (e) {
       showToast("Błąd połączenia z Neural Core.", "error");
@@ -67,9 +68,8 @@ const AIStudio: React.FC = () => {
             platform,
             content: result.content,
             imageUrl: result.imagePreviewUrl,
-            lang: language
+            lang: brand.missionLanguage
           };
-          // Simplified transmit for demonstration
           setHyperspace(false);
           showToast(t.studio.success, "success");
           setResult(null);
@@ -91,7 +91,7 @@ const AIStudio: React.FC = () => {
         <div className="flex items-center gap-4 text-[10px] font-orbitron text-white/40 uppercase tracking-widest">
            <span>{t.studio.costMsg}</span>
            <div className="h-px flex-1 bg-white/5" />
-           <span className="text-[#34E0F7]">Target Lang: {language}</span>
+           <span className="text-[#34E0F7] flex items-center gap-2"><Globe size={10} /> SIGNAL_LANG: {brand.missionLanguage}</span>
         </div>
       </header>
 
@@ -109,7 +109,7 @@ const AIStudio: React.FC = () => {
             <label className="block text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.studio.topic}</label>
             <textarea value={topic} onChange={(e) => setTopic(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 min-h-[150px] outline-none focus:border-[#8C4DFF] text-sm" />
           </div>
-          {language === 'PL' && (
+          {brand.missionLanguage === 'PL' && (
             <div className="flex items-center justify-between p-6 bg-[#C74CFF]/5 border border-[#C74CFF]/20 rounded-2xl cursor-pointer" onClick={() => setYodaMode(!yodaMode)}>
               <div className="flex items-center gap-4">
                 <YodaIcon active={yodaMode} />
@@ -136,7 +136,7 @@ const AIStudio: React.FC = () => {
           ) : (
             <div className="glass-panel p-12 rounded-3xl border-white/5 border-dashed border-2 flex flex-col items-center justify-center text-center space-y-4 flex-1 h-full">
               <Send size={40} className="text-white/10" />
-              <p className="text-white/20 font-orbitron text-xs tracking-widest uppercase">Targeting Lang: {language}</p>
+              <p className="text-white/20 font-orbitron text-xs tracking-widest uppercase">Targeting Lang: {brand.missionLanguage}</p>
             </div>
           )}
         </section>

@@ -13,7 +13,8 @@ import {
   Send,
   Wifi,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Globe
 } from 'lucide-react';
 import { useStore } from '../store';
 import { translations } from '../i18n';
@@ -56,7 +57,8 @@ const Dashboard: React.FC = () => {
     if (deductCredits(50)) {
       setAutopilotRunning(true);
       try {
-        const newPosts = await gemini.generateWeeklyPlan(brand, language, 0);
+        // UŻYWAMY brand.missionLanguage
+        const newPosts = await gemini.generateWeeklyPlan(brand, brand.missionLanguage, 0);
         setWeeklyPlan(newPosts);
       } finally {
         setAutopilotRunning(false);
@@ -76,7 +78,8 @@ const Dashboard: React.FC = () => {
                            type === 'vision' ? "Zmień tylko wizualne aspekty obrazu" : 
                            "Przebuduj cały post od zera";
         
-        const result = await gemini.refineContent(post, refinePrompt, brand, language);
+        // UŻYWAMY brand.missionLanguage
+        const result = await gemini.refineContent(post, refinePrompt, brand, brand.missionLanguage);
         
         updatePost(postId, {
           content: type !== 'vision' ? result.content : post.content,
@@ -103,7 +106,8 @@ const Dashboard: React.FC = () => {
           brand: brand.name,
           platform: post.platform,
           content: post.content,
-          imageUrl: post.imagePreviewUrl
+          imageUrl: post.imagePreviewUrl,
+          lang: brand.missionLanguage
         })
       });
 
@@ -139,7 +143,7 @@ const Dashboard: React.FC = () => {
                 </h3>
                 <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
                 <div className="flex items-center gap-4">
-                  <span className="text-[10px] font-mono text-white/20 tracking-[0.2em] uppercase">{dayPosts.length} MISSIONS_DETECTED</span>
+                  <span className="text-[10px] font-mono text-white/20 tracking-[0.2em] uppercase flex items-center gap-2"><Globe size={10} /> SIGNAL_LANG: {brand.missionLanguage}</span>
                   <button className="w-8 h-8 rounded-lg bg-[#34E0F7]/10 border border-[#34E0F7]/30 flex items-center justify-center text-[#34E0F7] hover:bg-[#34E0F7] hover:text-black transition-all">
                     <Plus size={18} />
                   </button>
@@ -165,20 +169,7 @@ const Dashboard: React.FC = () => {
                          {/* Control Overlays (Top Left) */}
                          <div className="absolute top-6 left-6 flex gap-2">
                             <button className="p-3 bg-black/60 backdrop-blur-md rounded-lg text-white/40 hover:text-white border border-white/10 transition-all"><Send size={16} /></button>
-                            <button className="p-3 bg-black/60 backdrop-blur-md rounded-lg text-white/40 hover:text-[#34E0F7] border border-white/10 transition-all"><RefreshCw size={16} /></button>
                             <button onClick={() => removePost(post.id)} className="p-3 bg-black/60 backdrop-blur-md rounded-lg text-white/40 hover:text-red-500 border border-white/10 transition-all"><Trash2 size={16} /></button>
-                         </div>
-
-                         {/* Status Badges (Bottom Left) */}
-                         <div className="absolute bottom-6 left-6 flex flex-col gap-2">
-                            <div className="px-4 py-1.5 bg-black/80 backdrop-blur-md border border-[#34E0F7]/30 rounded-full flex items-center gap-3">
-                               <div className="w-2 h-2 rounded-full bg-[#34E0F7] glow-cyan shadow-[0_0_8px_#34E0F7]" />
-                               <span className="text-[9px] font-orbitron text-white uppercase tracking-[0.2em] font-bold">PIXEL_STABLE_VERIFIED</span>
-                            </div>
-                            <div className="px-4 py-1.5 bg-black/80 backdrop-blur-md border border-white/10 rounded-full flex items-center gap-3 opacity-40">
-                               <div className="w-2 h-2 rounded-full bg-[#8C4DFF]" />
-                               <span className="text-[9px] font-orbitron text-white uppercase tracking-[0.2em] font-bold">PIXEL_STABLE_VERIFIED</span>
-                            </div>
                          </div>
                       </div>
 
@@ -193,14 +184,6 @@ const Dashboard: React.FC = () => {
                                   <p className="text-[9px] font-mono text-white/20 uppercase tracking-widest mt-0.5">GRAND OPENING INTRO</p>
                                </div>
                             </div>
-                            <div className="flex items-center gap-6">
-                               <div className="text-right">
-                                  <p className="text-[8px] font-mono text-[#34E0F7] uppercase tracking-widest font-bold">DRAFT_SIGNAL</p>
-                                  <p className="text-[8px] font-mono text-white/20 uppercase tracking-widest mt-0.5">TRANSMISSION_DATA (PL)</p>
-                               </div>
-                               <div className="h-10 w-px bg-white/10" />
-                               <div className="text-[11px] font-mono text-white/40 uppercase tracking-tighter">BYTES: {post.content.length * 2}</div>
-                            </div>
                          </div>
 
                          {/* Content Field */}
@@ -211,37 +194,6 @@ const Dashboard: React.FC = () => {
                               onChange={(e) => updatePost(post.id, { content: e.target.value })}
                               className="w-full bg-black/60 border border-white/10 rounded-2xl p-8 text-[13px] leading-relaxed text-white/70 min-h-[160px] outline-none focus:border-[#34E0F7] font-inter custom-scrollbar shadow-inner"
                             />
-                            <div className="absolute bottom-6 right-8 text-[9px] font-mono text-white/10 uppercase font-bold tracking-widest">NEURAL_DRAFT_V2.1</div>
-                         </div>
-
-                         {/* Brand Signature Fields */}
-                         <div className="flex items-center gap-3 mb-6">
-                            <MapPin size={14} className="text-[#34E0F7]" />
-                            <span className="text-[10px] font-orbitron text-white/40 uppercase tracking-[0.3em] font-black">NADAWCA_ID (BRAND_SIGNATURE)</span>
-                         </div>
-                         
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
-                            <div className="p-5 bg-white/5 rounded-2xl border border-white/5 flex flex-col gap-2">
-                               <label className="text-[8px] font-mono text-white/20 uppercase font-black tracking-widest">ADDRESS_LINE</label>
-                               <input 
-                                 value={brand.address || ''} 
-                                 onChange={(e) => updateBrand({address: e.target.value})} 
-                                 className="bg-transparent text-[12px] text-white/60 outline-none w-full" 
-                                 placeholder="CONFIGURE_DNA"
-                               />
-                            </div>
-                            <div className="p-5 bg-white/5 rounded-2xl border border-white/5 flex flex-col gap-2">
-                               <label className="text-[8px] font-mono text-white/20 uppercase font-black tracking-widest">CONTACT_SIGNAL</label>
-                               <div className="flex items-center gap-3">
-                                  <Phone size={12} className="text-[#34E0F7]"/>
-                                  <input 
-                                    value={brand.phone || ''} 
-                                    onChange={(e) => updateBrand({phone: e.target.value})} 
-                                    className="bg-transparent text-[12px] text-white/60 outline-none w-full" 
-                                    placeholder="CONFIGURE_DNA"
-                                  />
-                               </div>
-                            </div>
                          </div>
 
                          {/* Action Commands Row */}
@@ -310,7 +262,7 @@ const Dashboard: React.FC = () => {
         })}
       </div>
 
-      {/* FOOTER HUD - RESTORED FIDELITY */}
+      {/* FOOTER HUD */}
       <footer className="h-[120px] border-t border-white/10 bg-black/80 backdrop-blur-3xl px-16 flex items-center justify-between z-40 shrink-0">
          <div className="flex items-center gap-12">
             <div className="flex flex-col gap-3">
@@ -318,7 +270,7 @@ const Dashboard: React.FC = () => {
                   <div className={`w-4 h-4 rounded-full ${approvedCount > 0 ? 'bg-[#34E0F7] glow-cyan shadow-[0_0_12px_#34E0F7]' : 'bg-white/20'}`} />
                   <span className="text-[13px] font-orbitron font-black text-white uppercase tracking-[0.4em]">GOTOWOŚĆ_FLOTY: {approvedCount} / 7</span>
                </div>
-               <p className="text-[9px] font-mono text-white/20 uppercase tracking-[0.3em]">ALL SIGNALS GREEN. READY FOR JUMP.</p>
+               <p className="text-[9px] font-mono text-white/20 uppercase tracking-[0.3em]">ALL SIGNALS GREEN. READY FOR JUMP. (LANG: {brand.missionLanguage})</p>
             </div>
          </div>
 
@@ -331,7 +283,6 @@ const Dashboard: React.FC = () => {
                  className="h-full bg-gradient-to-r from-[#8C4DFF] via-[#34E0F7] to-[#8C4DFF] shadow-[0_0_20px_#34E0F7]"
                />
             </div>
-            <p className="text-[8px] font-mono text-white/10 mt-2 uppercase tracking-widest font-bold">STABILITY: 99.8% | SIGNAL: 100%</p>
          </div>
 
          <NeonButton 
@@ -339,7 +290,7 @@ const Dashboard: React.FC = () => {
            glow={approvedCount >= 1} 
            disabled={approvedCount < 1}
            className="px-16 py-6 flex items-center gap-5 text-base border-2"
-           onClick={() => {}}
+           onClick={handleGenerateWeek}
          >
             <Rocket size={24} className={approvedCount >= 7 ? 'animate-bounce' : ''} />
             <span className="font-black tracking-[0.1em]">INITIATE GLOBAL TRANSMISSION</span>
