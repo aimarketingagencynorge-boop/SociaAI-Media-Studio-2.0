@@ -16,7 +16,9 @@ import {
   Instagram, 
   Facebook, 
   Linkedin, 
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
+  Key
 } from 'lucide-react';
 import { useStore } from '../store';
 import { translations } from '../i18n';
@@ -53,6 +55,7 @@ const Onboarding: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [scanComplete, setScanComplete] = useState(false);
+  const [authRequired, setAuthRequired] = useState(false);
   const consoleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,22 +68,31 @@ const Onboarding: React.FC = () => {
     setLogs(prev => [...prev, `> [SYSTEM]: ${msg}`]);
   };
 
+  const handleOpenAuth = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setAuthRequired(false);
+      addLog("Neural Link Key updated. Retrying...");
+    }
+  };
+
   const handleScan = async () => {
     if (!url) return;
     setIsScanning(true);
     setLogs([]);
     setScanComplete(false);
+    setAuthRequired(false);
     
     addLog(`Targeting portal: ${url}`);
-    addLog(`Deploying Neural Search Drones...`);
+    addLog(`Establishing Satellite Link...`);
     
     try {
-      addLog("Extracting brand facts from web coordinates...");
-      const data = await gemini.scanWebsite(url, brand.missionLanguage);
+      addLog("Extracting brand facts from global indexes...");
+      const result = await gemini.scanWebsite(url, brand.missionLanguage);
+      const data = result.data;
       
       addLog(`DNA Map received. Accuracy: ${data.toneConfidence * 100}%`);
       addLog(`Brand detected: ${data.name}`);
-      addLog(`Industry: ${data.industry}`);
       
       updateBrand({
         name: data.name,
@@ -93,10 +105,17 @@ const Onboarding: React.FC = () => {
       });
       
       setScanComplete(true);
-      addLog(`DNA SYNCHRONIZED. Ready for next phase.`);
+      addLog(`DNA SYNCHRONIZED. Sources verified.`);
     } catch (e: any) {
+      const errorMsg = e.message || '';
       addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`);
-      addLog(`Check API Key or URL.`);
+      
+      if (errorMsg.includes("API key") || errorMsg.includes("400") || errorMsg.includes("403")) {
+        addLog(`Reason: AUTH_FAILURE. Please re-authenticate neural link.`);
+        setAuthRequired(true);
+      } else {
+        addLog(`Reason: ${errorMsg || 'PORTAL_UNREACHABLE'}`);
+      }
       console.error(e);
     } finally {
       setIsScanning(false);
@@ -115,7 +134,8 @@ const Onboarding: React.FC = () => {
       setWeeklyPlan(plan);
       setOnboardingStep(0); 
     } catch (e: any) {
-      alert(`Autopilot Error: Could not generate mission plan.`);
+      addLog(`AUTOPILOT_FAIL: ${e.message}`);
+      setAuthRequired(true);
     } finally {
       setAutopilotRunning(false);
     }
@@ -164,11 +184,23 @@ const Onboarding: React.FC = () => {
                 <p className="text-white/40 text-xs font-orbitron uppercase tracking-widest mb-10">{t.onboarding.step1Desc}</p>
                 <div className="space-y-6">
                   <input type="text" placeholder={t.onboarding.scanPlaceholder} value={url} onChange={(e) => setUrl(e.target.value)} className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-6 outline-none focus:border-[#34E0F7] transition-all font-mono text-sm" />
-                  <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
+                  
+                  {authRequired ? (
+                    <NeonButton variant="purple" className="w-full py-5 font-black text-lg flex items-center justify-center gap-3" onClick={handleOpenAuth}>
+                      <Key size={20} /> AUTHENTICATE NEURAL LINK
+                    </NeonButton>
+                  ) : (
+                    <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
+                  )}
                 </div>
+
                 {(isScanning || logs.length > 0) && (
                   <div className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs h-40 overflow-y-auto scrollbar-hide" ref={consoleRef}>
-                    {logs.map((log, i) => <div key={i} className={i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}>{log}</div>)}
+                    {logs.map((log, i) => (
+                      <div key={i} className={log.includes("CRITICAL_ERR") ? "text-red-500" : i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}>
+                        {log}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

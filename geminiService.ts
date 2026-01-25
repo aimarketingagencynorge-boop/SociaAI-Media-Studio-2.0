@@ -37,14 +37,14 @@ export class GeminiService {
     DESCRIPTION: ${brand.description}
     VISUAL MOOD: ${brand.voiceProfile}
     COLORS: ${colorString}
-    YODA MODE: ${brand.isYodaMode && targetLanguage === 'PL' ? 'ACTIVE (Use inverted Polish grammar like Master Yoda)' : 'INACTIVE'}
+    YODA MODE: ${brand.isYodaMode && targetLanguage === 'PL' ? 'ACTIVE (Use inverted Polish grammar)' : 'INACTIVE'}
     ----------------------
     `;
   }
 
   async generateImage(prompt: string, brand: BrandData): Promise<string> {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const brandPrompt = `Professional photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. High quality, cinematic lighting, no text.`;
+    const brandPrompt = `Professional cinematic photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. High resolution, no text.`;
 
     try {
       const response = await ai.models.generateContent({
@@ -62,32 +62,30 @@ export class GeminiService {
     return `https://loremflickr.com/800/800/${brand.industry.split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
 
-  /**
-   * SCAN WEBSITE: Uses Grounding to bypass CORS and extract brand DNA.
-   */
   async scanWebsite(url: string, targetLanguage: Language) {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const langName = this.getLanguageName(targetLanguage);
     
-    // STAGE 1: Research the brand via Google Search
+    // STAGE 1: Grounded Search for brand data
     const searchResponse = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `Search for and analyze the website and brand at this URL: ${url}. 
-      Identify the brand name, a detailed description of what they do, their industry, core mission, and dominant colors.
-      Provide the full report in ${langName}.`,
+      model: 'gemini-3-flash-preview',
+      contents: `Perform a deep search on this business URL: ${url}. 
+      Extract its official name, detailed description of operations, industry, core mission, and branding colors.
+      Provide the full intelligence report in ${langName}.`,
       config: {
         tools: [{ googleSearch: {} }]
       }
     });
 
     const intelligence = searchResponse.text;
+    const sources = searchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
-    // STAGE 2: Convert intelligence to structured Brand DNA JSON
+    // STAGE 2: Structured Data Mapping
     const mappingResponse = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Based on this intelligence report: "${intelligence}", create a JSON object for brand settings.
-      MANDATORY: The "description" and "toneOfVoice" values MUST be written in ${langName}.
-      Source URL: ${url}`,
+      contents: `Map the following intelligence report into a structured Brand DNA JSON: "${intelligence}".
+      URL: ${url}.
+      REQUIREMENT: "description" and "toneOfVoice" must be in ${langName}.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -113,10 +111,13 @@ export class GeminiService {
 
     try {
       const cleaned = this.cleanJsonResponse(mappingResponse.text || '{}');
-      return JSON.parse(cleaned);
+      return {
+        data: JSON.parse(cleaned),
+        sources: sources
+      };
     } catch (e) {
-      console.error("DNA Mapping failed", e, mappingResponse.text);
-      throw new Error("Neural Link Error: DNA mapping failed. Ensure the URL is valid.");
+      console.error("JSON Mapping failed", e, mappingResponse.text);
+      throw new Error("Could not decode brand DNA.");
     }
   }
 
@@ -128,8 +129,7 @@ export class GeminiService {
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `${context} Create a high-engagement ${platform} post about: ${topic}. 
-      All content MUST be in ${langName}. JSON format.`,
+      contents: `${context} Write a ${platform} post about: ${topic}. Text in ${langName}. JSON format.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -163,8 +163,7 @@ export class GeminiService {
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `${context} Act as a master social media manager. Create a 7-day plan (1 post per day) in ${langName}. 
-      Return as a JSON array.`,
+      contents: `${context} Plan a 7-day social media strategy. Language: ${langName}. JSON array.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -206,8 +205,7 @@ export class GeminiService {
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `${context} Refine the following post based on this command: "${refinePrompt}". 
-      Original post topic: ${post.topic}. Content in ${langName}. JSON output.`,
+      contents: `${context} Refine post: "${refinePrompt}". Topic: ${post.topic}. Language: ${langName}. JSON.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
