@@ -18,7 +18,8 @@ import {
   Linkedin, 
   AlertCircle,
   ShieldCheck,
-  Key
+  Key,
+  ExternalLink
 } from 'lucide-react';
 import { useStore } from '../store';
 import { translations } from '../i18n';
@@ -53,7 +54,7 @@ const Onboarding: React.FC = () => {
   const t = translations[language];
   const [url, setUrl] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [logs, setLogs] = useState<{msg: string, type?: 'system' | 'error' | 'source'}[]>([]);
   const [scanComplete, setScanComplete] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const consoleRef = useRef<HTMLDivElement>(null);
@@ -64,35 +65,47 @@ const Onboarding: React.FC = () => {
     }
   }, [logs]);
 
-  const addLog = (msg: string) => {
-    setLogs(prev => [...prev, `> [SYSTEM]: ${msg}`]);
+  const addLog = (msg: string, type: 'system' | 'error' | 'source' = 'system') => {
+    setLogs(prev => [...prev, { msg: `> [${type.toUpperCase()}]: ${msg}`, type }]);
   };
 
   const handleOpenAuth = async () => {
     if (window.aistudio) {
       await window.aistudio.openSelectKey();
       setAuthRequired(false);
-      addLog("Neural Link Key updated. Retrying...");
+      addLog("Neural Link Key updated. Ready to re-engage.");
     }
   };
 
   const handleScan = async () => {
     if (!url) return;
+    
+    // Check for API key selection first
+    if (window.aistudio && !(await window.aistudio.hasSelectedApiKey())) {
+      addLog("AUTHENTICATION_REQUIRED: Opening selection dialog...", "error");
+      setAuthRequired(true);
+      await window.aistudio.openSelectKey();
+      // Per instructions, assume success after triggering
+    }
+
     setIsScanning(true);
     setLogs([]);
     setScanComplete(false);
-    setAuthRequired(false);
     
     addLog(`Targeting portal: ${url}`);
-    addLog(`Establishing Satellite Link...`);
+    addLog(`Establishing satellite link to global indexes...`);
     
     try {
-      addLog("Extracting brand facts from global indexes...");
       const result = await gemini.scanWebsite(url, brand.missionLanguage);
-      const data = result.data;
+      const { data, sources } = result;
       
-      addLog(`DNA Map received. Accuracy: ${data.toneConfidence * 100}%`);
+      addLog(`DNA Map received. Confidence: ${(data.toneConfidence * 100).toFixed(1)}%`);
       addLog(`Brand detected: ${data.name}`);
+      
+      if (sources && sources.length > 0) {
+        addLog(`Verified grounding sources:`);
+        sources.forEach((src: string) => addLog(src, "source"));
+      }
       
       updateBrand({
         name: data.name,
@@ -105,16 +118,16 @@ const Onboarding: React.FC = () => {
       });
       
       setScanComplete(true);
-      addLog(`DNA SYNCHRONIZED. Sources verified.`);
+      addLog(`DNA SYNCHRONIZED. Mission architecture ready.`);
     } catch (e: any) {
-      const errorMsg = e.message || '';
-      addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`);
+      const errorMsg = e.message || 'PORTAL_UNREACHABLE';
+      addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`, "error");
       
-      if (errorMsg.includes("API key") || errorMsg.includes("400") || errorMsg.includes("403")) {
-        addLog(`Reason: AUTH_FAILURE. Please re-authenticate neural link.`);
+      if (errorMsg.includes("API Key") || errorMsg.includes("400") || errorMsg.includes("403") || errorMsg.includes("API_KEY_NOT_FOUND")) {
+        addLog(`Reason: AUTH_FAILURE. Re-authentication of Neural Link required.`, "error");
         setAuthRequired(true);
       } else {
-        addLog(`Reason: ${errorMsg || 'PORTAL_UNREACHABLE'}`);
+        addLog(`Reason: ${errorMsg}`, "error");
       }
       console.error(e);
     } finally {
@@ -124,7 +137,7 @@ const Onboarding: React.FC = () => {
 
   const finalizeMission = async () => {
     if (!brand.logos?.main) {
-      alert("LOGO_REQUIRED: Please upload your logo to proceed.");
+      alert("LOGO_REQUIRED: Mission cannot proceed without visual identity.");
       setOnboardingStep(3);
       return;
     }
@@ -134,7 +147,7 @@ const Onboarding: React.FC = () => {
       setWeeklyPlan(plan);
       setOnboardingStep(0); 
     } catch (e: any) {
-      addLog(`AUTOPILOT_FAIL: ${e.message}`);
+      addLog(`AUTOPILOT_CRITICAL: ${e.message}`, "error");
       setAuthRequired(true);
     } finally {
       setAutopilotRunning(false);
@@ -180,10 +193,19 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 1 && (
             <motion.div key="step1" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
               <div className="glass-panel p-10 rounded-3xl border-cyan-500/20 shadow-2xl">
-                <h2 className="text-3xl font-black font-orbitron mb-2 text-white">1. {t.onboarding.step1}</h2>
-                <p className="text-white/40 text-xs font-orbitron uppercase tracking-widest mb-10">{t.onboarding.step1Desc}</p>
+                <h2 className="text-3xl font-black font-orbitron mb-2 text-white uppercase tracking-tighter">1. {t.onboarding.step1}</h2>
+                <p className="text-white/40 text-[10px] font-orbitron uppercase tracking-widest mb-10">{t.onboarding.step1Desc}</p>
                 <div className="space-y-6">
-                  <input type="text" placeholder={t.onboarding.scanPlaceholder} value={url} onChange={(e) => setUrl(e.target.value)} className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-6 outline-none focus:border-[#34E0F7] transition-all font-mono text-sm" />
+                  <div className="relative group">
+                    <input 
+                      type="text" 
+                      placeholder={t.onboarding.scanPlaceholder} 
+                      value={url} 
+                      onChange={(e) => setUrl(e.target.value)} 
+                      className="w-full bg-white/5 border-2 border-white/10 rounded-2xl p-6 outline-none focus:border-[#34E0F7] transition-all font-mono text-sm pr-16" 
+                    />
+                    <Globe className="absolute right-6 top-1/2 -translate-y-1/2 text-white/10 group-focus-within:text-[#34E0F7] transition-colors" />
+                  </div>
                   
                   {authRequired ? (
                     <NeonButton variant="purple" className="w-full py-5 font-black text-lg flex items-center justify-center gap-3" onClick={handleOpenAuth}>
@@ -195,16 +217,21 @@ const Onboarding: React.FC = () => {
                 </div>
 
                 {(isScanning || logs.length > 0) && (
-                  <div className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs h-40 overflow-y-auto scrollbar-hide" ref={consoleRef}>
+                  <div className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs h-48 overflow-y-auto scrollbar-hide space-y-2" ref={consoleRef}>
                     {logs.map((log, i) => (
-                      <div key={i} className={log.includes("CRITICAL_ERR") ? "text-red-500" : i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}>
-                        {log}
+                      <div key={i} className={`flex items-start gap-2 ${log.type === 'error' ? "text-red-500" : log.type === 'source' ? "text-cyan-500/50 italic text-[10px]" : i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}`}>
+                        {log.type === 'source' && <ExternalLink size={10} className="mt-1 shrink-0" />}
+                        <span className="break-all">{log.msg}</span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
-              {scanComplete && <NeonButton variant="cyan" className="w-full py-6 text-xl font-black" onClick={handleStepNext}>DALEJ: DNA MARKI</NeonButton>}
+              {scanComplete && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <NeonButton variant="cyan" className="w-full py-6 text-xl font-black shadow-[0_0_30px_rgba(52,224,247,0.3)]" onClick={handleStepNext}>DALEJ: ANALIZA DNA</NeonButton>
+                </motion.div>
+              )}
             </motion.div>
           )}
 

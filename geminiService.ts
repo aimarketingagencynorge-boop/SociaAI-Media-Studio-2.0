@@ -42,11 +42,19 @@ export class GeminiService {
     `;
   }
 
-  async generateImage(prompt: string, brand: BrandData): Promise<string> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const brandPrompt = `Professional cinematic photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. High resolution, no text.`;
+  private async getAiInstance() {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      throw new Error("API_KEY_NOT_FOUND: Ensure you have selected a valid API key in the selection dialog.");
+    }
+    return new GoogleGenAI({ apiKey });
+  }
 
+  async generateImage(prompt: string, brand: BrandData): Promise<string> {
     try {
+      const ai = await this.getAiInstance();
+      const brandPrompt = `Professional cinematic photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. High resolution, no text.`;
+
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: brandPrompt }] },
@@ -63,29 +71,30 @@ export class GeminiService {
   }
 
   async scanWebsite(url: string, targetLanguage: Language) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await this.getAiInstance();
     const langName = this.getLanguageName(targetLanguage);
     
-    // STAGE 1: Grounded Search for brand data
+    // STAGE 1: Grounded Research
     const searchResponse = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Perform a deep search on this business URL: ${url}. 
-      Extract its official name, detailed description of operations, industry, core mission, and branding colors.
-      Provide the full intelligence report in ${langName}.`,
+      contents: `Perform a comprehensive digital audit for this business URL: ${url}. 
+      Extract their official name, a detailed description of what they do, their core industry, their primary mission statement, and any dominant brand colors.
+      Provide a detailed report in ${langName}.`,
       config: {
         tools: [{ googleSearch: {} }]
       }
     });
 
     const intelligence = searchResponse.text;
-    const sources = searchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const groundingChunks = searchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sources = groundingChunks.map((chunk: any) => chunk.web?.uri).filter(Boolean);
 
-    // STAGE 2: Structured Data Mapping
+    // STAGE 2: Structured Brand DNA Mapping
     const mappingResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Map the following intelligence report into a structured Brand DNA JSON: "${intelligence}".
+      model: 'gemini-3-pro-preview',
+      contents: `Based on the following research intelligence: "${intelligence}", generate a structured Brand DNA JSON.
       URL: ${url}.
-      REQUIREMENT: "description" and "toneOfVoice" must be in ${langName}.`,
+      REQUIREMENT: The "description" and "toneOfVoice" fields MUST be in ${langName}.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -116,20 +125,20 @@ export class GeminiService {
         sources: sources
       };
     } catch (e) {
-      console.error("JSON Mapping failed", e, mappingResponse.text);
-      throw new Error("Could not decode brand DNA.");
+      console.error("DNA Parsing failed", e, mappingResponse.text);
+      throw new Error("Neural link failed to decode brand DNA.");
     }
   }
 
   async generateSocialPost(topic: string, platform: string, brand: BrandData, targetLanguage: Language) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await this.getAiInstance();
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
     const langName = this.getLanguageName(targetLanguage);
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `${context} Write a ${platform} post about: ${topic}. Text in ${langName}. JSON format.`,
+      contents: `${context} Write a high-engagement ${platform} post about: ${topic}. All text in ${langName}. Return as JSON.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -156,14 +165,14 @@ export class GeminiService {
   }
 
   async generateWeeklyPlan(brand: BrandData, targetLanguage: Language, weekIndex: number = 0): Promise<SocialPost[]> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await this.getAiInstance();
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
     const langName = this.getLanguageName(targetLanguage);
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `${context} Plan a 7-day social media strategy. Language: ${langName}. JSON array.`,
+      contents: `${context} Design a 7-day social media plan for this brand. All output text in ${langName}. Return as a JSON array of daily posts.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -199,13 +208,13 @@ export class GeminiService {
   }
 
   async refineContent(post: SocialPost, refinePrompt: string, brand: BrandData, targetLanguage: Language) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await this.getAiInstance();
     const context = this.getBrandContextPrompt(brand, targetLanguage);
     const langName = this.getLanguageName(targetLanguage);
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `${context} Refine post: "${refinePrompt}". Topic: ${post.topic}. Language: ${langName}. JSON.`,
+      contents: `${context} Refine the current social media post based on this request: "${refinePrompt}". Original topic: ${post.topic}. Content in ${langName}. JSON output.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
