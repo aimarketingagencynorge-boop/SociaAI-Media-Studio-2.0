@@ -3,12 +3,6 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { BrandData, SocialPost, Language } from "./types";
 
 export class GeminiService {
-  private ai: GoogleGenAI;
-
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  }
-
   private getLanguageName(lang: Language): string {
     const names: Record<Language, string> = {
       'PL': 'Polish',
@@ -43,16 +37,17 @@ export class GeminiService {
     DESCRIPTION: ${brand.description}
     VISUAL MOOD: ${brand.voiceProfile}
     COLORS: ${colorString}
-    YODA MODE: ${brand.isYodaMode && targetLanguage === 'PL' ? 'ACTIVE' : 'INACTIVE'}
+    YODA MODE: ${brand.isYodaMode && targetLanguage === 'PL' ? 'ACTIVE (Use inverted Polish grammar)' : 'INACTIVE'}
     ----------------------
     `;
   }
 
   async generateImage(prompt: string, brand: BrandData): Promise<string> {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const brandPrompt = `Professional photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. No text.`;
 
     try {
-      const response = await this.ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: brandPrompt }] },
         config: { imageConfig: { aspectRatio: "1:1" } }
@@ -67,20 +62,16 @@ export class GeminiService {
     return `https://loremflickr.com/800/800/${brand.industry.split(' ')[0] || 'brand'}?random=${Math.random()}`;
   }
 
-  /**
-   * SCAN WEBSITE LOGIC (Dual Stage)
-   * Stage 1: Search for info about the URL using Google Search Grounding.
-   * Stage 2: Convert search results into structured JSON.
-   */
   async scanWebsite(url: string, targetLanguage: Language) {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const langName = this.getLanguageName(targetLanguage);
     
-    // STAGE 1: Gather info using Search
-    const searchResponse = await this.ai.models.generateContent({
+    // STAGE 1: Gather info using Search Grounding
+    const searchResponse = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Search for information about this brand and website: ${url}. 
-      Find out its name, what they do, their industry, typical colors, and brand mission.
-      Describe it in detail in ${langName}.`,
+      contents: `Analyze this brand URL: ${url}. 
+      Gather facts about its name, full business description, industry, mission, and visual style.
+      MANDATORY: Provide the findings as a detailed report in ${langName}.`,
       config: {
         tools: [{ googleSearch: {} }]
       }
@@ -88,12 +79,12 @@ export class GeminiService {
 
     const gatheredInfo = searchResponse.text;
 
-    // STAGE 2: Map to JSON
-    const mappingResponse = await this.ai.models.generateContent({
+    // STAGE 2: Map to structured JSON DNA
+    const mappingResponse = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Based on this brand information: "${gatheredInfo}", create a JSON object for brand settings.
-      MANDATORY: "description" and "toneOfVoice" must be in ${langName}.
-      The URL is ${url}.`,
+      contents: `Based on this intelligence: "${gatheredInfo}", create a JSON object for brand settings.
+      MANDATORY: The "description" and "toneOfVoice" values MUST be written in ${langName}.
+      Source URL: ${url}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -121,18 +112,19 @@ export class GeminiService {
       const cleaned = this.cleanJsonResponse(mappingResponse.text || '{}');
       return JSON.parse(cleaned);
     } catch (e) {
-      console.error("Parsing failed", e, mappingResponse.text);
-      throw new Error("Failed to map brand DNA.");
+      console.error("Scanning failed to parse", e, mappingResponse.text);
+      throw new Error("Portal connection error: Could not decode DNA.");
     }
   }
 
   async generateSocialPost(topic: string, platform: string, brand: BrandData, targetLanguage: Language) {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
     
-    const response = await this.ai.models.generateContent({
+    const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
-      contents: `${context} Generate a ${platform} post about: ${topic}. JSON output.`,
+      contents: `${context} Generate a ${platform} post about: ${topic}. All fields in JSON in ${this.getLanguageName(targetLanguage)}.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -159,13 +151,14 @@ export class GeminiService {
   }
 
   async generateWeeklyPlan(brand: BrandData, targetLanguage: Language, weekIndex: number = 0): Promise<SocialPost[]> {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const signature = this.getSignature(brand);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
     const langName = this.getLanguageName(targetLanguage);
     
-    const response = await this.ai.models.generateContent({
+    const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `${context} Create a 7-day social media plan. Text in ${langName}. JSON array.`,
+      contents: `${context} Create a 7-day social media plan. Text MUST BE in ${langName}. JSON array output.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -201,8 +194,9 @@ export class GeminiService {
   }
 
   async refineContent(post: SocialPost, refinePrompt: string, brand: BrandData, targetLanguage: Language) {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = this.getBrandContextPrompt(brand, targetLanguage);
-    const response = await this.ai.models.generateContent({
+    const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: `${context} Refine this post: ${refinePrompt}. Current Topic: ${post.topic}. JSON output.`,
       config: {
