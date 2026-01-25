@@ -19,7 +19,8 @@ import {
   AlertCircle,
   ShieldCheck,
   Key,
-  ExternalLink
+  ExternalLink,
+  Lock
 } from 'lucide-react';
 import { useStore } from '../store';
 import { translations } from '../i18n';
@@ -54,7 +55,7 @@ const Onboarding: React.FC = () => {
   const t = translations[language];
   const [url, setUrl] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const [logs, setLogs] = useState<{msg: string, type?: 'system' | 'error' | 'source'}[]>([]);
+  const [logs, setLogs] = useState<{msg: string, type?: 'system' | 'error' | 'source' | 'warn'}[]>([]);
   const [scanComplete, setScanComplete] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const consoleRef = useRef<HTMLDivElement>(null);
@@ -65,45 +66,47 @@ const Onboarding: React.FC = () => {
     }
   }, [logs]);
 
-  const addLog = (msg: string, type: 'system' | 'error' | 'source' = 'system') => {
+  const addLog = (msg: string, type: 'system' | 'error' | 'source' | 'warn' = 'system') => {
     setLogs(prev => [...prev, { msg: `> [${type.toUpperCase()}]: ${msg}`, type }]);
   };
 
   const handleOpenAuth = async () => {
     if (window.aistudio) {
+      addLog("Opening Neural Link selection interface...");
       await window.aistudio.openSelectKey();
       setAuthRequired(false);
-      addLog("Neural Link Key updated. Ready to re-engage.");
+      addLog("Neural Link Re-established. Retrying scan operations...");
     }
   };
 
   const handleScan = async () => {
     if (!url) return;
     
-    // Check for API key selection first
+    // Proactive check for API key selection
     if (window.aistudio && !(await window.aistudio.hasSelectedApiKey())) {
-      addLog("AUTHENTICATION_REQUIRED: Opening selection dialog...", "error");
+      addLog("AUTH_REQUIRED: No API key detected. Please select one.", "warn");
       setAuthRequired(true);
-      await window.aistudio.openSelectKey();
-      // Per instructions, assume success after triggering
+      return;
     }
 
     setIsScanning(true);
     setLogs([]);
     setScanComplete(false);
+    setAuthRequired(false);
     
     addLog(`Targeting portal: ${url}`);
-    addLog(`Establishing satellite link to global indexes...`);
+    addLog(`Authenticating satellite session...`);
     
     try {
+      addLog("Engagement: Global Neural Indexing...");
       const result = await gemini.scanWebsite(url, brand.missionLanguage);
       const { data, sources } = result;
       
-      addLog(`DNA Map received. Confidence: ${(data.toneConfidence * 100).toFixed(1)}%`);
-      addLog(`Brand detected: ${data.name}`);
+      addLog(`DNA Map verified. Confidence Level: ${(data.toneConfidence * 100).toFixed(1)}%`);
+      addLog(`Entity Detected: ${data.name}`);
       
       if (sources && sources.length > 0) {
-        addLog(`Verified grounding sources:`);
+        addLog(`Verified Knowledge Sources:`);
         sources.forEach((src: string) => addLog(src, "source"));
       }
       
@@ -118,16 +121,16 @@ const Onboarding: React.FC = () => {
       });
       
       setScanComplete(true);
-      addLog(`DNA SYNCHRONIZED. Mission architecture ready.`);
+      addLog(`DNA SYNCHRONIZED. Mission architecture is ready for deployment.`);
     } catch (e: any) {
       const errorMsg = e.message || 'PORTAL_UNREACHABLE';
       addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`, "error");
       
-      if (errorMsg.includes("API Key") || errorMsg.includes("400") || errorMsg.includes("403") || errorMsg.includes("API_KEY_NOT_FOUND")) {
-        addLog(`Reason: AUTH_FAILURE. Re-authentication of Neural Link required.`, "error");
+      if (errorMsg.includes("API Key") || errorMsg.includes("400") || errorMsg.includes("403") || errorMsg.includes("AUTH_KEY_MISSING")) {
+        addLog(`Cause: AUTH_FAILURE. Re-authentication with Neural Link (API Key) is mandatory.`, "error");
         setAuthRequired(true);
       } else {
-        addLog(`Reason: ${errorMsg}`, "error");
+        addLog(`Cause: ${errorMsg}`, "error");
       }
       console.error(e);
     } finally {
@@ -147,7 +150,7 @@ const Onboarding: React.FC = () => {
       setWeeklyPlan(plan);
       setOnboardingStep(0); 
     } catch (e: any) {
-      addLog(`AUTOPILOT_CRITICAL: ${e.message}`, "error");
+      addLog(`AUTOPILOT_CRITICAL_FAILURE: ${e.message}`, "error");
       setAuthRequired(true);
     } finally {
       setAutopilotRunning(false);
@@ -208,19 +211,23 @@ const Onboarding: React.FC = () => {
                   </div>
                   
                   {authRequired ? (
-                    <NeonButton variant="purple" className="w-full py-5 font-black text-lg flex items-center justify-center gap-3" onClick={handleOpenAuth}>
-                      <Key size={20} /> AUTHENTICATE NEURAL LINK
-                    </NeonButton>
+                    <div className="space-y-4">
+                      <NeonButton variant="purple" className="w-full py-5 font-black text-lg flex items-center justify-center gap-3" onClick={handleOpenAuth}>
+                        <Lock size={20} className="animate-pulse" /> AUTHENTICATE NEURAL LINK
+                      </NeonButton>
+                      <p className="text-[9px] font-orbitron text-center text-magenta-500/60 uppercase tracking-widest">A secure connection is required for high-fidelity scanning.</p>
+                    </div>
                   ) : (
                     <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
                   )}
                 </div>
 
                 {(isScanning || logs.length > 0) && (
-                  <div className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs h-48 overflow-y-auto scrollbar-hide space-y-2" ref={consoleRef}>
+                  <div className="mt-10 bg-black/80 border border-white/10 rounded-2xl p-6 font-mono text-xs h-48 overflow-y-auto scrollbar-hide space-y-2" ref={consoleRef}>
                     {logs.map((log, i) => (
-                      <div key={i} className={`flex items-start gap-2 ${log.type === 'error' ? "text-red-500" : log.type === 'source' ? "text-cyan-500/50 italic text-[10px]" : i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}`}>
+                      <div key={i} className={`flex items-start gap-2 ${log.type === 'error' ? "text-red-500 font-bold" : log.type === 'warn' ? "text-yellow-500" : log.type === 'source' ? "text-cyan-500/50 italic text-[10px]" : i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}`}>
                         {log.type === 'source' && <ExternalLink size={10} className="mt-1 shrink-0" />}
+                        {log.type === 'error' && <AlertCircle size={10} className="mt-1 shrink-0" />}
                         <span className="break-all">{log.msg}</span>
                       </div>
                     ))}
