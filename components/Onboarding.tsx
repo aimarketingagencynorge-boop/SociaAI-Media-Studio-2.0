@@ -5,26 +5,17 @@ import {
   Globe, 
   Briefcase, 
   Zap, 
-  User, 
   Share2, 
-  Loader2, 
-  ChevronRight, 
-  Terminal, 
-  CheckCircle2, 
-  ArrowRight,
-  Sparkles,
-  Palette,
-  Mic2,
-  Rocket,
-  Plus,
-  Trash2,
-  ChevronLeft,
-  X,
-  Instagram,
-  Facebook,
-  Linkedin,
-  CloudUpload,
-  Image as ImageIcon,
+  ChevronLeft, 
+  X, 
+  CloudUpload, 
+  ImageIcon, 
+  Mic2, 
+  Palette, 
+  Rocket, 
+  Instagram, 
+  Facebook, 
+  Linkedin, 
   AlertCircle
 } from 'lucide-react';
 import { useStore } from '../store';
@@ -60,7 +51,6 @@ const Onboarding: React.FC = () => {
   const t = translations[language];
   const [url, setUrl] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [scanComplete, setScanComplete] = useState(false);
   const consoleRef = useRef<HTMLDivElement>(null);
@@ -78,22 +68,19 @@ const Onboarding: React.FC = () => {
   const handleScan = async () => {
     if (!url) return;
     setIsScanning(true);
-    setScanProgress(0);
     setLogs([]);
     setScanComplete(false);
     
     addLog(`Targeting portal: ${url}`);
-    addLog(`Deploying Search Drones...`);
+    addLog(`Deploying Neural Search Drones...`);
     
     try {
-      setScanProgress(30);
-      addLog("Analyzing website structure via Google Grounding...");
+      addLog("Extracting brand facts from web coordinates...");
       const data = await gemini.scanWebsite(url, brand.missionLanguage);
       
-      setScanProgress(70);
-      addLog(`DNA Map extracted successfully.`);
+      addLog(`DNA Map received. Accuracy: ${data.toneConfidence * 100}%`);
       addLog(`Brand detected: ${data.name}`);
-      addLog(`Description length: ${data.description?.length || 0} chars`);
+      addLog(`Industry: ${data.industry}`);
       
       updateBrand({
         name: data.name,
@@ -105,11 +92,12 @@ const Onboarding: React.FC = () => {
         ctaLink: url
       });
       
-      setScanProgress(100);
       setScanComplete(true);
+      addLog(`DNA SYNCHRONIZED. Ready for next phase.`);
     } catch (e: any) {
-      addLog(`CRITICAL_ERR: SIGNAL_LOST.`);
-      addLog(`Details: ${e.message || 'Check your internet connection or URL.'}`);
+      addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`);
+      addLog(`Check API Key or URL.`);
+      console.error(e);
     } finally {
       setIsScanning(false);
     }
@@ -117,7 +105,7 @@ const Onboarding: React.FC = () => {
 
   const finalizeMission = async () => {
     if (!brand.logos?.main) {
-      alert("LOGO_REQUIRED: Proszę wgrać logo przed odpaleniem silników.");
+      alert("LOGO_REQUIRED: Please upload your logo to proceed.");
       setOnboardingStep(3);
       return;
     }
@@ -127,7 +115,7 @@ const Onboarding: React.FC = () => {
       setWeeklyPlan(plan);
       setOnboardingStep(0); 
     } catch (e: any) {
-      alert(`Autopilot Error: Nie udało się wygenerować planu.`);
+      alert(`Autopilot Error: Could not generate mission plan.`);
     } finally {
       setAutopilotRunning(false);
     }
@@ -153,7 +141,13 @@ const Onboarding: React.FC = () => {
           const isCompleted = onboardingStep > stepNum;
           return (
             <div key={idx} className="relative z-10 flex flex-col items-center gap-2">
-              <motion.div animate={{ scale: isActive ? 1.1 : 1, borderColor: isActive ? '#34E0F7' : isCompleted ? '#8C4DFF' : 'rgba(255,255,255,0.1)' }} className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-500 border-2 ${isActive ? 'bg-[#34E0F7] text-black shadow-[0_0_20px_#34E0F7]' : isCompleted ? 'bg-[#8C4DFF] text-white' : 'bg-[#0A0A12] text-white/40'}`}>
+              <motion.div 
+                animate={{ 
+                  scale: isActive ? 1.1 : 1, 
+                  borderColor: isActive ? '#34E0F7' : isCompleted ? '#8C4DFF' : 'rgba(255,255,255,0.1)' 
+                }} 
+                className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-500 border-2 ${isActive ? 'bg-[#34E0F7] text-black shadow-[0_0_20px_#34E0F7]' : isCompleted ? 'bg-[#8C4DFF] text-white' : 'bg-[#0A0A12] text-white/40'}`}
+              >
                 {icon}
               </motion.div>
             </div>
@@ -165,7 +159,7 @@ const Onboarding: React.FC = () => {
         <AnimatePresence mode="wait">
           {onboardingStep === 1 && (
             <motion.div key="step1" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
-              <div className="glass-panel p-10 rounded-3xl border-cyan-500/20">
+              <div className="glass-panel p-10 rounded-3xl border-cyan-500/20 shadow-2xl">
                 <h2 className="text-3xl font-black font-orbitron mb-2 text-white">1. {t.onboarding.step1}</h2>
                 <p className="text-white/40 text-xs font-orbitron uppercase tracking-widest mb-10">{t.onboarding.step1Desc}</p>
                 <div className="space-y-6">
@@ -173,7 +167,7 @@ const Onboarding: React.FC = () => {
                   <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
                 </div>
                 {(isScanning || logs.length > 0) && (
-                  <div className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs max-h-40 overflow-y-auto scrollbar-hide">
+                  <div className="mt-10 bg-black/60 border border-white/10 rounded-2xl p-6 font-mono text-xs h-40 overflow-y-auto scrollbar-hide" ref={consoleRef}>
                     {logs.map((log, i) => <div key={i} className={i === logs.length - 1 ? "text-[#34E0F7] animate-pulse" : "text-white/30"}>{log}</div>)}
                   </div>
                 )}
@@ -184,21 +178,21 @@ const Onboarding: React.FC = () => {
 
           {onboardingStep === 2 && (
             <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-10 rounded-3xl border-[#8C4DFF]/20">
+              <div className="glass-panel p-10 rounded-3xl border-[#8C4DFF]/20 shadow-2xl">
                 <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">2. DNA MARKI</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                   <div className="space-y-2">
                     <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Nazwa Marki</label>
-                    <input type="text" value={brand.name} onChange={e => updateBrand({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
+                    <input type="text" value={brand.name} onChange={e => updateBrand({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF] text-white" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Branża</label>
-                    <input type="text" value={brand.industry} onChange={e => updateBrand({ industry: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF]" />
+                    <input type="text" value={brand.industry} onChange={e => updateBrand({ industry: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF] text-white" />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Opis Marki (Brand Bio)</label>
-                  <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} placeholder="Szczegółowy opis marki, który AI wykorzysta do tworzenia treści..." className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[160px] resize-none text-sm outline-none focus:border-[#8C4DFF]" />
+                  <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} placeholder="Szczegółowy opis marki, który AI wykorzysta do personalizacji postów..." className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[160px] resize-none text-sm outline-none focus:border-[#8C4DFF] text-white/80" />
                 </div>
               </div>
               <div className="flex gap-4">
@@ -208,10 +202,9 @@ const Onboarding: React.FC = () => {
             </motion.div>
           )}
 
-          {/* Steps 3, 4, 5 are already preserved in the state from previous turn */}
           {onboardingStep === 3 && (
             <motion.div key="step3" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-10 rounded-3xl border-[#C74CFF]/20">
+              <div className="glass-panel p-10 rounded-3xl border-[#C74CFF]/20 shadow-2xl">
                 <h2 className="text-3xl font-black font-orbitron mb-10 text-white uppercase tracking-widest text-center">3. TOŻSAMOŚĆ WIZUALNA</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                    <div className="space-y-6">
@@ -262,7 +255,7 @@ const Onboarding: React.FC = () => {
 
           {onboardingStep === 4 && (
             <motion.div key="step4" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-10 rounded-3xl border-cyan-500/20">
+              <div className="glass-panel p-10 rounded-3xl border-cyan-500/20 shadow-2xl">
                 <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">4. GŁOS MARKI</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                   {['premium', 'warm', 'modern', 'storyteller'].map(tone => (
@@ -280,7 +273,7 @@ const Onboarding: React.FC = () => {
                       </div>
                    </div>
                    <div className={`w-12 h-6 rounded-full relative transition-colors ${brand.isYodaMode ? 'bg-[#C74CFF]' : 'bg-white/10'}`}>
-                      <motion.div animate={{ x: brand.isYodaMode ? 26 : 4 }} className="absolute top-1 w-4 h-4 bg-white rounded-full" />
+                      <motion.div animate={{ x: brand.isYodaMode ? 26 : 4 }} className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-lg" />
                    </div>
                 </div>
               </div>
@@ -293,7 +286,7 @@ const Onboarding: React.FC = () => {
 
           {onboardingStep === 5 && (
             <motion.div key="step5" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
-              <div className="glass-panel p-10 rounded-3xl border-white/5">
+              <div className="glass-panel p-10 rounded-3xl border-white/5 shadow-2xl">
                 <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">5. WĘZŁY KOMUNIKACYJNE</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {['instagram', 'facebook', 'linkedin', 'tiktok'].map(p => (
