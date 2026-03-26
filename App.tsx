@@ -14,7 +14,7 @@ import Planner from './components/Planner';
 import Settings from './components/Settings';
 import Billing from './components/Billing';
 import Integrations from './components/Integrations';
-import { AuthProvider, useAuth } from './components/AuthContext';
+import { AuthProvider, useAuth } from './AuthContext';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, onboardingStep, activeView } = useStore();
