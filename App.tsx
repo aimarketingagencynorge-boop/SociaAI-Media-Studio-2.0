@@ -1,6 +1,7 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useStore } from './store';
+import { AuthProvider, useAuth } from './AuthContext';
 import LandingPage from './components/LandingPage';
 import Onboarding from './components/Onboarding';
 import Dashboard from './components/Dashboard';
@@ -13,12 +14,29 @@ import BrandKit from './components/BrandKit';
 import Planner from './components/Planner';
 import Settings from './components/Settings';
 import Billing from './components/Billing';
+import Integrations from './components/Integrations';
+import Auth from './components/Auth';
 
-const App: React.FC = () => {
-  const { isAuthenticated, onboardingStep, activeView } = useStore();
+const AppContent: React.FC = () => {
+  const { onboardingStep, activeView, fetchUserData } = useStore();
+  const { user, token, isLoading } = useAuth();
 
-  if (!isAuthenticated) {
-    return <LandingPage />;
+  useEffect(() => {
+    if (token) {
+      fetchUserData(token);
+    }
+  }, [token, fetchUserData]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A12] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth />;
   }
 
   if (onboardingStep > 0) {
@@ -34,7 +52,8 @@ const App: React.FC = () => {
       case 'brand-kit': return <BrandKit />;
       case 'planner': return <Planner />;
       case 'settings': return <Settings />;
-      case 'store': return <Billing />; // Using Billing component for the refined terminal look
+      case 'integrations': return <Integrations />;
+      case 'store': return <Billing />;
       default: return (
         <div className="flex items-center justify-center h-full">
            <div className="text-center glass-panel p-12 rounded-3xl">
@@ -49,6 +68,14 @@ const App: React.FC = () => {
     <AppShell>
       {renderView()}
     </AppShell>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 };
 

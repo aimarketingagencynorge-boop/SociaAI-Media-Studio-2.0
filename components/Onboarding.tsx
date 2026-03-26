@@ -70,21 +70,40 @@ const Onboarding: React.FC = () => {
     setLogs(prev => [...prev, { msg: `> [${type.toUpperCase()}]: ${msg}`, type }]);
   };
 
+  const [manualKey, setManualKey] = useState(gemini.getStoredApiKey() || '');
+  const [showManualAuth, setShowManualAuth] = useState(!window.aistudio);
+
   const handleOpenAuth = async () => {
-    if (window.aistudio) {
+    if (window.aistudio && !showManualAuth) {
       addLog("Opening Neural Link selection interface...");
       await window.aistudio.openSelectKey();
       setAuthRequired(false);
       addLog("Neural Link Re-established. Retrying scan operations...");
+      // We pass true to handleScan to skip the hasSelectedApiKey check due to race conditions
+      setTimeout(() => handleScan(true), 500);
+    } else {
+      // Manual key entry
+      if (!manualKey) {
+        addLog("MANUAL_AUTH_REQUIRED: Please enter your Gemini API Key.", "warn");
+        return;
+      }
+      gemini.setApiKey(manualKey);
+      setAuthRequired(false);
+      addLog("Manual Neural Link established. Retrying scan operations...");
+      handleScan(true);
     }
   };
 
-  const handleScan = async () => {
+  const handleScan = async (force: boolean = false) => {
     if (!url) return;
     
     // Proactive check for API key selection
-    if (window.aistudio && !(await window.aistudio.hasSelectedApiKey())) {
-      addLog("AUTH_REQUIRED: No API key detected. Please select one.", "warn");
+    // If force is true, we skip the check to mitigate race conditions after openSelectKey
+    const hasAistudioKey = window.aistudio ? await window.aistudio.hasSelectedApiKey() : false;
+    const hasManualKey = !!localStorage.getItem('GEMINI_API_KEY');
+
+    if (!force && !hasAistudioKey && !hasManualKey) {
+      addLog("AUTH_REQUIRED: No API key detected. Please select or enter one.", "warn");
       setAuthRequired(true);
       return;
     }
@@ -99,7 +118,7 @@ const Onboarding: React.FC = () => {
     
     try {
       addLog("Engagement: Global Neural Indexing...");
-      const result = await gemini.scanWebsite(url, brand.missionLanguage);
+      const result = await gemini.scanWebsite(url, brand.contentLanguage);
       const { data, sources } = result;
       
       addLog(`DNA Map verified. Confidence Level: ${(data.toneConfidence * 100).toFixed(1)}%`);
@@ -126,13 +145,27 @@ const Onboarding: React.FC = () => {
       const errorMsg = e.message || 'PORTAL_UNREACHABLE';
       addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`, "error");
       
-      if (errorMsg.includes("API Key") || errorMsg.includes("400") || errorMsg.includes("403") || errorMsg.includes("AUTH_KEY_MISSING")) {
+      // Check for various auth-related error strings
+      const isAuthError = errorMsg.includes("API Key") || 
+                          errorMsg.includes("401") || 
+                          errorMsg.includes("403") || 
+                          errorMsg.includes("Forbidden") ||
+                          errorMsg.includes("PERMISSION_DENIED") ||
+                          errorMsg.includes("AUTH_KEY_MISSING") ||
+                          errorMsg.includes("API_KEY_INVALID") ||
+                          errorMsg.includes("Requested entity was not found");
+
+      if (isAuthError) {
         addLog(`Cause: AUTH_FAILURE. Re-authentication with Neural Link (API Key) is mandatory.`, "error");
+        if (!window.aistudio) {
+          localStorage.removeItem('GEMINI_API_KEY');
+          setManualKey('');
+        }
         setAuthRequired(true);
       } else {
         addLog(`Cause: ${errorMsg}`, "error");
       }
-      console.error(e);
+      console.error("Scan Error Details:", e);
     } finally {
       setIsScanning(false);
     }
@@ -146,7 +179,7 @@ const Onboarding: React.FC = () => {
     }
     setAutopilotRunning(true);
     try {
-      const plan = await gemini.generateWeeklyPlan(brand, brand.missionLanguage);
+      const plan = await gemini.generateWeeklyPlan(brand, brand.contentLanguage);
       setWeeklyPlan(plan);
       setOnboardingStep(0); 
     } catch (e: any) {
@@ -212,13 +245,65 @@ const Onboarding: React.FC = () => {
                   
                   {authRequired ? (
                     <div className="space-y-4">
-                      <NeonButton variant="purple" className="w-full py-5 font-black text-lg flex items-center justify-center gap-3" onClick={handleOpenAuth}>
-                        <Lock size={20} className="animate-pulse" /> AUTHENTICATE NEURAL LINK
-                      </NeonButton>
-                      <p className="text-[9px] font-orbitron text-center text-magenta-500/60 uppercase tracking-widest">A secure connection is required for high-fidelity scanning.</p>
+                      {showManualAuth ? (
+                        <div className="space-y-4">
+                          <div className="relative group">
+                            <input 
+                              type="password" 
+                              placeholder={t.onboarding.manualAuth} 
+                              value={manualKey} 
+                              onChange={(e) => setManualKey(e.target.value)} 
+                              className="w-full bg-white/5 border-2 border-magenta-500/30 rounded-2xl p-6 outline-none focus:border-magenta-500 transition-all font-mono text-sm pr-16" 
+                            />
+                            <Key className="absolute right-6 top-1/2 -translate-y-1/2 text-magenta-500/30 group-focus-within:text-magenta-500 transition-colors" />
+                          </div>
+                          <NeonButton variant="purple" className="w-full py-5 font-black text-lg flex items-center justify-center gap-3" onClick={handleOpenAuth}>
+                            <Lock size={20} className="animate-pulse" /> {t.onboarding.establishLink}
+                          </NeonButton>
+                          {window.aistudio && (
+                            <button 
+                              onClick={() => setShowManualAuth(false)}
+                              className="w-full text-[10px] font-orbitron text-white/20 uppercase tracking-widest hover:text-white transition-colors"
+                            >
+                              {t.common.back}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <NeonButton variant="purple" className="w-full py-5 font-black text-lg flex items-center justify-center gap-3" onClick={handleOpenAuth}>
+                            <Lock size={20} className="animate-pulse" /> {t.onboarding.authenticateLink}
+                          </NeonButton>
+                          <button 
+                            onClick={() => setShowManualAuth(true)}
+                            className="w-full text-[10px] font-orbitron text-white/20 uppercase tracking-widest hover:text-white transition-colors"
+                          >
+                            {t.onboarding.manualAuthBtn}
+                          </button>
+                        </div>
+                      )}
+                      
+                      <p className="text-[9px] font-orbitron text-center text-magenta-500/60 uppercase tracking-widest">
+                        {showManualAuth 
+                          ? 'Get your API key at ai.google.dev to continue.'
+                          : 'A secure connection is required for high-fidelity scanning.'}
+                      </p>
                     </div>
                   ) : (
-                    <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
+                    <div className="space-y-4">
+                      <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
+                      {!isScanning && (
+                        <button 
+                          onClick={() => {
+                            setAuthRequired(true);
+                            setShowManualAuth(true);
+                          }}
+                          className="w-full text-[10px] font-orbitron text-white/20 uppercase tracking-widest hover:text-white transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Key size={10} /> {t.onboarding.manualAuthBtn}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
 

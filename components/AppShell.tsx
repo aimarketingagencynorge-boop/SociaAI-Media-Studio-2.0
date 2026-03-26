@@ -11,6 +11,7 @@ import {
   ChevronDown,
   BarChart3,
   Dna,
+  Activity,
   Menu,
   X,
   Power,
@@ -18,10 +19,12 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useStore, AppView } from '../store';
+import { useAuth } from '../AuthContext';
 import { translations } from '../i18n';
 
 const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { language, credits, activeView, setActiveView, setAuthenticated } = useStore();
+  const { language, credits, activeView, setActiveView } = useStore();
+  const { user, logout } = useAuth();
   const t = translations[language];
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDayMenuOpen, setIsDayMenuOpen] = useState(true);
@@ -33,6 +36,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { id: 'media-lab', label: t.nav.lab, icon: <ImageIcon size={18} /> },
     { id: 'analytics', label: t.nav.analytics, icon: <BarChart3 size={18} /> },
     { id: 'brand-kit', label: t.nav.brandKit, icon: <Dna size={18} /> },
+    { id: 'integrations', label: t.nav.integrations, icon: <Activity size={18} /> },
     { id: 'store', label: t.nav.store, icon: <CreditCard size={18} /> },
     { id: 'settings', label: t.nav.settings, icon: <SettingsIcon size={18} /> },
   ];
@@ -69,6 +73,17 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         <p className="text-[9px] font-mono text-white/20 uppercase tracking-[0.4em] mt-2 flex items-center gap-2">
           <ShieldCheck size={10} className="text-[#34E0F7]" /> COMMAND_STATION v2.5
         </p>
+        {user && (
+          <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#8C4DFF] to-[#34E0F7] flex items-center justify-center text-[10px] font-black text-white">
+              {user.displayName?.charAt(0) || user.email.charAt(0)}
+            </div>
+            <div className="overflow-hidden">
+              <p className="text-[10px] font-orbitron text-white uppercase truncate">{user.displayName || 'Commander'}</p>
+              <p className="text-[8px] font-mono text-white/20 truncate">{user.email}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 space-y-2 overflow-y-auto pr-2 custom-scrollbar">
@@ -125,7 +140,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             {credits} <span className="text-[10px] text-white/20">FC</span>
           </div>
         </div>
-        <button onClick={() => setAuthenticated(false)} className="w-full flex items-center justify-center gap-3 py-4 border border-white/5 rounded-xl text-[9px] font-orbitron text-white/20 hover:text-red-500 hover:bg-red-500/10 transition-all uppercase tracking-[0.3em] font-black">
+        <button onClick={logout} className="w-full flex items-center justify-center gap-3 py-4 border border-white/5 rounded-xl text-[9px] font-orbitron text-white/20 hover:text-red-500 hover:bg-red-500/10 transition-all uppercase tracking-[0.3em] font-black">
            <Power size={14} /> EXIT_TERMINAL
         </button>
       </div>

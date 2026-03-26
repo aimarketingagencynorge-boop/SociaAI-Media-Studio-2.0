@@ -4,11 +4,12 @@ import { motion } from 'framer-motion';
 
 interface Props {
   children: React.ReactNode;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   className?: string;
   variant?: 'purple' | 'cyan' | 'magenta';
   glow?: boolean;
   disabled?: boolean;
+  type?: 'button' | 'submit' | 'reset';
 }
 
 const NeonButton: React.FC<Props> = ({ 
@@ -17,7 +18,8 @@ const NeonButton: React.FC<Props> = ({
   className = "", 
   variant = 'purple', 
   glow = true,
-  disabled = false
+  disabled = false,
+  type = 'button'
 }) => {
   const variants = {
     purple: 'border-[#8C4DFF] text-white bg-[#8C4DFF]/10 hover:bg-[#8C4DFF] hover:text-white',
@@ -33,6 +35,7 @@ const NeonButton: React.FC<Props> = ({
 
   return (
     <motion.button
+      type={type}
       whileHover={{ scale: disabled ? 1 : 1.05, y: -2 }}
       whileTap={{ scale: disabled ? 1 : 0.95 }}
       onClick={onClick}

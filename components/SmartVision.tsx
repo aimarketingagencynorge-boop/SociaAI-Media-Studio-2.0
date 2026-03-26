@@ -41,21 +41,31 @@ const SmartVision: React.FC<Props> = ({ imageUrl, hookText, showHook = true, cla
       
       {/* The Hook Overlay - Branded Font & High Visibility Glassmorphism */}
       {showHook && hookText && !isRefining && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center pointer-events-none z-10">
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 md:p-10 text-center pointer-events-none z-10">
           <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             key={hookText}
-            className="px-10 py-6 rounded-3xl bg-black/40 backdrop-blur-2xl border border-white/20 shadow-[0_0_50px_rgba(0,0,0,0.5)] max-w-[95%] relative overflow-hidden"
+            className="px-5 py-3 md:px-7 md:py-4 rounded-xl bg-black/25 backdrop-blur-md border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] max-w-[85%] relative overflow-hidden"
           >
             {/* Glossy Reflection Effect */}
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-tr from-white/5 via-transparent to-transparent pointer-events-none" />
             
-            <span className="relative z-10 text-2xl md:text-3xl font-black font-orbitron uppercase tracking-tighter text-white leading-tight filter drop-shadow-[0_4px_15px_rgba(0,0,0,1)]">
+            <span className="relative z-10 text-base md:text-lg font-black font-orbitron uppercase tracking-wide text-white leading-tight filter drop-shadow-lg">
               {hookText}
             </span>
           </motion.div>
-          <div className="mt-4 text-[9px] font-orbitron text-[#34E0F7] bg-[#34E0F7]/10 px-3 py-1 rounded border border-[#34E0F7]/20 tracking-[0.3em] uppercase">Holographic_UI: ON</div>
+          
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="mt-3 flex items-center gap-2"
+          >
+            <div className="h-[1px] w-4 bg-white/10" />
+            <span className="text-[6px] md:text-[7px] font-orbitron text-[#34E0F7]/40 tracking-[0.4em] uppercase">Creative_Overlay</span>
+            <div className="h-[1px] w-4 bg-white/10" />
+          </motion.div>
         </div>
       )}
 

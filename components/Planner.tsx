@@ -12,6 +12,9 @@ const Planner: React.FC = () => {
 
   // Kalendarz symuluje listopad (posts dayIndex 0-6 to 11.11 - 17.11)
   const days = Array.from({ length: 30 }, (_, i) => i + 1);
+  const dayNames = [
+    t.days.mon, t.days.tue, t.days.wed, t.days.thu, t.days.fri, t.days.sat, t.days.sun
+  ];
 
   const getPostsForDay = (dayNum: number) => {
     // Nasza "Misja Tygodnia" zaczyna się od 11 listopada (poniedziałek)
@@ -32,7 +35,7 @@ const Planner: React.FC = () => {
           <h2 className="text-4xl font-black font-orbitron mb-2 tracking-tight text-white">
             {t.planner.title}
           </h2>
-          <p className="text-white/40 uppercase tracking-widest text-[10px] font-orbitron">Temporalny Zarządca Emisji Satelitarnej</p>
+          <p className="text-white/40 uppercase tracking-widest text-[10px] font-orbitron">{t.planner.temporalManager}</p>
         </motion.div>
 
         <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
@@ -57,7 +60,7 @@ const Planner: React.FC = () => {
               <button className="p-2 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors">
                 <ChevronLeft size={20} />
               </button>
-              <span className="font-orbitron text-sm tracking-widest uppercase">Listopad 2024</span>
+              <span className="font-orbitron text-sm tracking-widest uppercase">{t.planner.november2024}</span>
               <button className="p-2 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors">
                 <ChevronRight size={20} />
               </button>
@@ -65,7 +68,7 @@ const Planner: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-7 border-b border-white/5 text-center py-4 bg-white/[0.01]">
-          {['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'].map(d => (
+          {dayNames.map(d => (
             <div key={d} className="text-[10px] font-orbitron text-white/20 uppercase tracking-widest">{d}</div>
           ))}
         </div>
@@ -125,15 +128,15 @@ const Planner: React.FC = () => {
       <div className="mt-8 flex gap-6">
          <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-[#34E0F7] glow-cyan shadow-[0_0_10px_#34E0F7]" />
-            <span className="text-[10px] font-orbitron text-[#34E0F7] uppercase tracking-widest">Zaplanowano (Satelita)</span>
+            <span className="text-[10px] font-orbitron text-[#34E0F7] uppercase tracking-widest">{t.planner.scheduled}</span>
          </div>
          <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-[10px] font-orbitron text-green-500/60 uppercase tracking-widest">Wysłano</span>
+            <span className="text-[10px] font-orbitron text-green-500/60 uppercase tracking-widest">{t.planner.sent}</span>
          </div>
          <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-white/20" />
-            <span className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Szkic</span>
+            <span className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.planner.draft}</span>
          </div>
       </div>
     </div>

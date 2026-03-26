@@ -6,8 +6,12 @@ import { useStore } from '../store';
 import { translations } from '../i18n';
 
 const Analytics: React.FC = () => {
-  const { language } = useStore();
+  const { language, posts, mediaAssets, studioAssets, integrations } = useStore();
   const t = translations[language];
+
+  const totalAssets = mediaAssets.length + studioAssets.length;
+  const totalPosts = posts.length;
+  const activeIntegrations = integrations.filter(i => i.isEnabled).length;
 
   const chartData = [45, 78, 52, 91, 64, 88, 72];
 
@@ -31,7 +35,7 @@ const Analytics: React.FC = () => {
               <TrendingUp size={24} className="text-[#C74CFF]" />
               <span className="text-[10px] font-orbitron text-[#C74CFF] px-2 py-1 rounded bg-[#C74CFF]/10">+220%</span>
             </div>
-            <p className="text-4xl font-black font-orbitron text-white mb-1">142.5K</p>
+            <p className="text-4xl font-black font-orbitron text-white mb-1">{totalPosts}</p>
             <p className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.analytics.reach}</p>
           </div>
           <div className="absolute -right-4 -bottom-4 text-[#C74CFF] opacity-5 group-hover:opacity-10 transition-opacity">
@@ -48,7 +52,7 @@ const Analytics: React.FC = () => {
               <Users size={24} className="text-[#34E0F7]" />
               <span className="text-[10px] font-orbitron text-[#34E0F7] px-2 py-1 rounded bg-[#34E0F7]/10">+118%</span>
             </div>
-            <p className="text-4xl font-black font-orbitron text-white mb-1">8.9K</p>
+            <p className="text-4xl font-black font-orbitron text-white mb-1">{totalAssets}</p>
             <p className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.analytics.engagement}</p>
           </div>
           <div className="absolute -right-4 -bottom-4 text-[#34E0F7] opacity-5 group-hover:opacity-10 transition-opacity">
@@ -61,10 +65,10 @@ const Analytics: React.FC = () => {
           className="glass-panel p-8 rounded-[2rem] border-white/10 flex flex-col justify-center items-center text-center"
         >
           <Activity size={32} className="text-white/20 mb-4 animate-pulse" />
-          <p className="text-xs font-orbitron text-white/60 mb-2 uppercase tracking-widest">System Status</p>
+          <p className="text-xs font-orbitron text-white/60 mb-2 uppercase tracking-widest">Active Integrations</p>
           <div className="flex items-center gap-2">
              <div className="w-2 h-2 rounded-full bg-[#34E0F7] shadow-[0_0_10px_rgba(52,224,247,1)]" />
-             <p className="text-[10px] font-mono text-[#34E0F7]">{t.analytics.status}</p>
+             <p className="text-[10px] font-mono text-[#34E0F7]">{activeIntegrations} Linked</p>
           </div>
         </motion.div>
       </div>

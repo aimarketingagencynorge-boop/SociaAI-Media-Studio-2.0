@@ -1,9 +1,9 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
-import { UserState, Language, BrandData, SocialPost, BrandAsset } from './types';
+import { UserState, Language, BrandData, SocialPost, BrandAsset, MediaAsset, StudioGeneratedAsset, UserIntegration, OutboundEventPayload, BrandReferenceImage, ReferenceSettings } from './types';
 
-export type AppView = 'dashboard' | 'planner' | 'ai-studio' | 'media-lab' | 'analytics' | 'brand-kit' | 'store' | 'settings';
+export type AppView = 'dashboard' | 'planner' | 'ai-studio' | 'media-lab' | 'analytics' | 'brand-kit' | 'store' | 'settings' | 'integrations';
 
 interface StoreActions {
   setLanguage: (lang: Language) => void;
@@ -22,17 +22,37 @@ interface StoreActions {
   incrementVideoCount: () => void;
   setHyperspace: (active: boolean) => void;
   toggleSocialLink: (platform: string) => void;
+  setWebhookUrl: (url: string) => void;
   resetMission: () => void;
   setEditingPost: (post: SocialPost | null) => void;
   addBrandAsset: (asset: BrandAsset) => void;
   removeBrandAsset: (id: string) => void;
   updateBrandAssetTag: (id: string, tag: BrandAsset['tag']) => void;
+  addReferenceImage: (image: BrandReferenceImage) => void;
+  addReferenceImages: (images: BrandReferenceImage[]) => void;
+  removeReferenceImage: (id: string) => void;
+  updateReferenceImage: (id: string, updates: Partial<BrandReferenceImage>) => void;
+  updateReferenceSettings: (settings: Partial<ReferenceSettings>) => void;
+  addMediaAsset: (asset: MediaAsset) => void;
+  removeMediaAsset: (id: string) => void;
+  updateMediaAsset: (id: string, updates: Partial<MediaAsset>) => void;
+  addStudioAsset: (asset: StudioGeneratedAsset) => void;
+  removeStudioAsset: (id: string) => void;
+  syncAllPostsWithBrand: (buildFinalContent: (content: string, brand: BrandData) => string) => void;
+  addIntegration: (integration: UserIntegration) => void;
+  removeIntegration: (id: string) => void;
+  updateIntegration: (id: string, updates: Partial<UserIntegration>) => void;
+  toggleIntegration: (id: string) => void;
+  triggerOutboundEvent: (event: Omit<OutboundEventPayload, 'userId' | 'workspaceId' | 'createdAt'>) => Promise<void>;
+  fetchUserData: (token: string) => Promise<void>;
+  saveUserData: (token: string) => Promise<void>;
   activeView: AppView;
   videoCount: number;
   isHyperspaceActive: boolean;
   socialLinks: Record<string, boolean>;
   webhookUrl: string;
   editingPost: SocialPost | null;
+  geminiApiKey: string;
 }
 
 const INITIAL_BRAND_DATA: BrandData = {
@@ -42,7 +62,7 @@ const INITIAL_BRAND_DATA: BrandData = {
   industry: '',
   toneOfVoice: 'professional',
   isYodaMode: false,
-  missionLanguage: 'PL', // Domyślny inicjalny
+  contentLanguage: 'PL',
   colors: [
     { name: 'Primary Neon', hex: '#8C4DFF' },
     { name: 'Secondary Cyan', hex: '#34E0F7' },
@@ -60,14 +80,38 @@ const INITIAL_BRAND_DATA: BrandData = {
     dark: undefined
   },
   assets: [],
+  referenceImages: [],
+  referenceSettings: {
+    useInGeneration: true,
+    strength: 'medium'
+  },
   voiceProfile: 'modern',
   humanTouch: '',
   coreMission: '',
+  whatWeDo: '',
+  howWeDoIt: '',
+  brandPerception: '',
   pillars: ['', '', ''],
   dictionary: { keywords: [], forbidden: [] },
   emojiStyle: 50,
   ctaStyle: 'direct',
-  missionContext: 'ig'
+  missionContext: 'ig',
+  platformDNA: {
+    instagram: { positioning: '', contentFocus: '', visualDirection: '', goal: '' },
+    facebook: { positioning: '', contentFocus: '', visualDirection: '', goal: '' },
+    tiktok: { positioning: '', contentFocus: '', visualDirection: '', goal: '' },
+    linkedin: { positioning: '', contentFocus: '', visualDirection: '', goal: '' },
+    youtube: { positioning: '', contentFocus: '', visualDirection: '', goal: '' },
+    twitter: { positioning: '', contentFocus: '', visualDirection: '', goal: '' }
+  },
+  signature: {
+    enabled: true,
+    showBrandName: true,
+    showAddress: true,
+    showPhone: true,
+    showEmail: true,
+    showCtaLink: true
+  }
 };
 
 const indexedDBStorage: StateStorage = {
@@ -139,6 +183,9 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
       isHyperspaceActive: false,
       isAutopilotRunning: false,
       editingPost: null,
+      userId: 'user_9921',
+      workspaceId: 'ws_beta_1',
+      integrations: [],
       webhookUrl: 'https://hooks.zapier.com/hooks/catch/21562148/uq3g9os/',
       socialLinks: {
         instagram: true,
@@ -148,11 +195,11 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
       },
       brand: INITIAL_BRAND_DATA,
       posts: [],
+      mediaAssets: [],
+      studioAssets: [],
+      geminiApiKey: '',
 
-      setLanguage: (language) => set((state) => ({ 
-        language, 
-        brand: { ...state.brand, missionLanguage: language } // Sync mission lang with UI lang by default
-      })),
+      setLanguage: (language) => set({ language }),
       setCredits: (credits) => set({ credits }),
       addCredits: (amount) => set((state) => ({ credits: state.credits + amount })),
       deductCredits: (amount) => {
@@ -164,7 +211,10 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
         return false;
       },
       setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
-      updateBrand: (data) => set((state) => ({ brand: { ...state.brand, ...data } })),
+      updateBrand: (data) => set((state) => {
+        const newBrand = { ...(state.brand || INITIAL_BRAND_DATA), ...data };
+        return { brand: newBrand };
+      }),
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
       setWeeklyPlan: (posts) => set({ posts }),
       addPost: (post) => set((state) => ({ posts: [...state.posts, post] })),
@@ -180,32 +230,252 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
       toggleSocialLink: (platform) => set((state) => ({
         socialLinks: { ...state.socialLinks, [platform]: !state.socialLinks[platform] }
       })),
+      setWebhookUrl: (webhookUrl) => set({ webhookUrl }),
       addBrandAsset: (asset) => set((state) => {
-        if (state.brand.assets.length >= 10) return state;
-        return { brand: { ...state.brand, assets: [...state.brand.assets, asset] } };
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        if (brand.assets.length >= 10) return state;
+        return { brand: { ...brand, assets: [...brand.assets, asset] } };
       }),
-      removeBrandAsset: (id) => set((state) => ({
-        brand: { ...state.brand, assets: state.brand.assets.filter(a => a.id !== id) }
+      removeBrandAsset: (id) => set((state) => {
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        return {
+          brand: { ...brand, assets: brand.assets.filter(a => a.id !== id) }
+        };
+      }),
+      updateBrandAssetTag: (id, tag) => set((state) => {
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        return {
+          brand: { ...brand, assets: brand.assets.map(a => a.id === id ? { ...a, tag } : a) }
+        };
+      }),
+      addReferenceImage: (image) => set((state) => {
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        const currentImages = brand.referenceImages || [];
+        if (currentImages.length >= 20) return state;
+        return {
+          brand: { ...brand, referenceImages: [image, ...currentImages] }
+        };
+      }),
+      addReferenceImages: (images) => set((state) => {
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        const currentImages = brand.referenceImages || [];
+        const currentCount = currentImages.length;
+        const availableSlots = 20 - currentCount;
+        if (availableSlots <= 0) return state;
+        
+        const newImages = images.slice(0, availableSlots);
+        return {
+          brand: { ...brand, referenceImages: [...newImages, ...currentImages] }
+        };
+      }),
+      removeReferenceImage: (id) => set((state) => {
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        return {
+          brand: { ...brand, referenceImages: (brand.referenceImages || []).filter(img => img.id !== id) }
+        };
+      }),
+      updateReferenceImage: (id, updates) => set((state) => {
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        return {
+          brand: { 
+            ...brand, 
+            referenceImages: (brand.referenceImages || []).map(img => img.id === id ? { ...img, ...updates, updatedAt: new Date().toISOString() } : img) 
+          }
+        };
+      }),
+      updateReferenceSettings: (settings) => set((state) => {
+        const brand = state.brand || INITIAL_BRAND_DATA;
+        return {
+          brand: { ...brand, referenceSettings: { ...(brand.referenceSettings || { useInGeneration: true, strength: 'medium' }), ...settings } }
+        };
+      }),
+      addMediaAsset: (asset) => set((state) => ({
+        mediaAssets: [asset, ...state.mediaAssets]
       })),
-      updateBrandAssetTag: (id, tag) => set((state) => ({
-        brand: { ...state.brand, assets: state.brand.assets.map(a => a.id === id ? { ...a, tag } : a) }
+      removeMediaAsset: (id) => set((state) => ({
+        mediaAssets: state.mediaAssets.filter(a => a.id !== id)
       })),
+      updateMediaAsset: (id, updates) => set((state) => ({
+        mediaAssets: state.mediaAssets.map(a => a.id === id ? { ...a, ...updates } : a)
+      })),
+      addStudioAsset: (asset) => set((state) => ({
+        studioAssets: [asset, ...state.studioAssets]
+      })),
+      removeStudioAsset: (id) => set((state) => ({
+        studioAssets: state.studioAssets.filter(a => a.id !== id)
+      })),
+      syncAllPostsWithBrand: (buildFinalContent) => set((state) => ({
+        posts: state.posts.map(post => {
+          if (post.signatureEnabled) {
+            return { ...post, content: buildFinalContent(post.content, state.brand) };
+          }
+          return post;
+        })
+      })),
+      addIntegration: (integration) => set((state) => ({ 
+        integrations: [...state.integrations, integration] 
+      })),
+      removeIntegration: (id) => set((state) => ({ 
+        integrations: state.integrations.filter(i => i.id !== id) 
+      })),
+      updateIntegration: (id, updates) => set((state) => ({
+        integrations: state.integrations.map(i => i.id === id ? { ...i, ...updates, updatedAt: new Date().toISOString() } : i)
+      })),
+      toggleIntegration: (id) => set((state) => ({
+        integrations: state.integrations.map(i => i.id === id ? { ...i, isEnabled: !i.isEnabled, updatedAt: new Date().toISOString() } : i)
+      })),
+      triggerOutboundEvent: async (eventData) => {
+        const state = get();
+        const payload: OutboundEventPayload = {
+          ...eventData,
+          userId: state.userId,
+          workspaceId: state.workspaceId,
+          createdAt: new Date().toISOString(),
+          brandName: state.brand.name
+        };
+
+        // Find enabled integrations that listen to this event
+        const activeIntegrations = state.integrations.filter(i => 
+          i.isEnabled && i.events.includes(payload.eventType)
+        );
+
+        if (activeIntegrations.length === 0) return;
+
+        // Send to each integration
+        const promises = activeIntegrations.map(async (integration) => {
+          try {
+            const response = await fetch(integration.endpointUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            if (!response.ok) {
+              console.error(`Failed to send webhook to ${integration.name}: ${response.statusText}`);
+            }
+          } catch (error) {
+            console.error(`Error sending webhook to ${integration.name}:`, error);
+          }
+        });
+
+        await Promise.allSettled(promises);
+      },
+
+      fetchUserData: async (token) => {
+        try {
+          const [brandRes, postsRes, settingsRes] = await Promise.all([
+            fetch('/api/brand', { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch('/api/posts', { headers: { 'Authorization': `Bearer ${token}` } }),
+            fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
+          ]);
+
+          if (brandRes.ok && postsRes.ok && settingsRes.ok) {
+            const brandData = await brandRes.json();
+            const postsData = await postsRes.json();
+            const settingsData = await settingsRes.json();
+
+            if (brandData) {
+              set({ 
+                brand: {
+                  ...INITIAL_BRAND_DATA,
+                  name: brandData.brand_bio ? brandData.brand_bio.split('\n')[0] : '', // Simple mapping
+                  description: brandData.brand_bio || '',
+                  coreMission: brandData.mission || '',
+                  whatWeDo: brandData.what_we_do || '',
+                  howWeDoIt: brandData.how_we_do_it || '',
+                  brandPerception: brandData.brand_perception || '',
+                  pillars: brandData.pillars || ['', '', ''],
+                  platformDNA: brandData.platform_dna || INITIAL_BRAND_DATA.platformDNA,
+                  // Add other mappings as needed
+                }
+              });
+            }
+
+            set({ 
+              posts: postsData.map((p: any) => ({
+                id: p.id,
+                dayIndex: p.day_index,
+                platform: p.platform,
+                content: p.text,
+                imageUrl: p.asset_url,
+                isApproved: !!p.is_approved,
+                status: !!p.is_approved ? 'approved' : 'draft'
+              })),
+              geminiApiKey: settingsData?.gemini_api_key || '',
+              webhookUrl: settingsData?.webhook_url || ''
+            });
+          }
+        } catch (e) {
+          console.error("Failed to fetch user data", e);
+        }
+      },
+
+      saveUserData: async (token) => {
+        const state = get();
+        try {
+          await Promise.all([
+            fetch('/api/brand', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                brand_bio: state.brand.description,
+                mission: state.brand.coreMission,
+                what_we_do: state.brand.whatWeDo,
+                how_we_do_it: state.brand.howWeDoIt,
+                brand_perception: state.brand.brandPerception,
+                pillars: state.brand.pillars,
+                platform_dna: state.brand.platformDNA
+              })
+            }),
+            fetch('/api/settings', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({
+                gemini_api_key: state.geminiApiKey,
+                webhook_url: state.webhookUrl
+              })
+            })
+          ]);
+          // Posts are saved individually in actions usually, but we could sync them here too
+        } catch (e) {
+          console.error("Failed to save user data", e);
+        }
+      },
+
       resetMission: () => set({
         onboardingStep: 1,
         posts: [],
         editingPost: null,
-        brand: { ...INITIAL_BRAND_DATA, missionLanguage: get().language }
+        brand: INITIAL_BRAND_DATA
       }),
     }),
     {
       name: 'sociai-studio-storage-v2',
       storage: createJSONStorage(() => indexedDBStorage),
+      onRehydrateStorage: () => (state) => {
+        if (state && !state.brand) {
+          state.brand = INITIAL_BRAND_DATA;
+        } else if (state && state.brand) {
+          // Ensure referenceImages exists
+          if (!state.brand.referenceImages) {
+            state.brand.referenceImages = [];
+          }
+          if (!state.brand.referenceSettings) {
+            state.brand.referenceSettings = { useInGeneration: true, strength: 'medium' };
+          }
+        }
+      },
       partialize: (state) => ({ 
         credits: state.credits, 
         language: state.language, 
         brand: state.brand, 
         socialLinks: state.socialLinks,
-        posts: state.posts
+        posts: state.posts,
+        mediaAssets: state.mediaAssets,
+        studioAssets: state.studioAssets,
+        integrations: state.integrations,
+        webhookUrl: state.webhookUrl,
+        userId: state.userId,
+        workspaceId: state.workspaceId
       }),
     }
   )
