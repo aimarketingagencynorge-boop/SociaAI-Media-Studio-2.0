@@ -14,9 +14,9 @@ const TikTokIcon = ({ size, className }: { size: number, className?: string }) =
 );
 
 const Settings: React.FC = () => {
-  const { language, socialLinks, toggleSocialLink, webhookUrl, brand, updateBrand } = useStore();
+  const { language, socialLinks, toggleSocialLink, webhookUrl, brand, updateBrand, geminiApiKey, setGeminiApiKey } = useStore();
   const t = translations[language];
-  const [manualKey, setManualKey] = React.useState(gemini.getStoredApiKey() || '');
+  const [manualKey, setManualKey] = React.useState(geminiApiKey || gemini.getStoredApiKey() || '');
   const [isSavingKey, setIsSavingKey] = React.useState(false);
   const [tempWebhook, setTempWebhook] = React.useState(webhookUrl);
 
@@ -69,6 +69,7 @@ const Settings: React.FC = () => {
                 className="py-4 text-[10px]"
                 onClick={() => {
                   setIsSavingKey(true);
+                  setGeminiApiKey(manualKey);
                   gemini.setApiKey(manualKey);
                   setTimeout(() => setIsSavingKey(false), 1000);
                 }}

@@ -5,11 +5,61 @@ import { Rocket, LogIn, Zap, ChevronRight, RefreshCw } from 'lucide-react';
 import { useStore } from '../store';
 import { translations } from '../i18n';
 import NeonButton from './NeonButton';
+import { auth, googleProvider, db, handleFirestoreError, OperationType } from '../firebase';
+import { signInWithPopup } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const LandingPage: React.FC = () => {
-  const { language, setLanguage, setAuthenticated, setOnboardingStep, credits, brand, resetMission } = useStore();
+  const { language, setLanguage, setAuthenticated, setOnboardingStep, credits, brand, resetMission, setFirebaseUser, setGeminiApiKey, updateBrand } = useStore();
   const t = translations[language];
   const [showContinueDialog, setShowContinueDialog] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleLogin = async () => {
+    setIsLoggingIn(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      
+      // Check if user exists in Firestore
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        // Create new user profile
+        await setDoc(userDocRef, {
+          uid: user.uid,
+          email: user.email,
+          credits: 500,
+          language: language,
+          onboardingStep: 1,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${user.uid}`));
+      } else {
+        // Load existing user data into store
+        const data = userDoc.data();
+        if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
+        if (data.brand) updateBrand(data.brand);
+        if (data.language) setLanguage(data.language);
+      }
+
+      setFirebaseUser(user);
+      setAuthenticated(true);
+    } catch (error) {
+      console.error("Login failed:", error);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleStartMission = () => {
+    if (brand.name) {
+      setShowContinueDialog(true);
+    } else {
+      handleLogin();
+    }
+  };
 
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
@@ -28,16 +78,6 @@ const LandingPage: React.FC = () => {
         duration: 0.6, 
         ease: "easeOut"
       } 
-    }
-  };
-
-  const handleStartMission = () => {
-    if (brand.name) {
-      setShowContinueDialog(true);
-    } else {
-      setAuthenticated(true);
-      setLanguage(language); // Ensure language is set
-      setOnboardingStep(1);
     }
   };
 
@@ -121,10 +161,11 @@ const LandingPage: React.FC = () => {
               variant="cyan" 
               glow={false}
               className="w-full sm:w-auto flex items-center justify-center gap-4 md:text-xl px-10 md:px-14 py-4 md:py-6 border-2 border-opacity-30 hover:border-opacity-100 bg-white/5 backdrop-blur-md"
-              onClick={() => setAuthenticated(true)}
+              onClick={handleLogin}
+              disabled={isLoggingIn}
             >
-              <LogIn size={20} className="md:size-24" />
-              {t.loginBtn}
+              <LogIn size={20} className={`md:size-24 ${isLoggingIn ? 'animate-spin' : ''}`} />
+              {isLoggingIn ? 'Connecting...' : t.loginBtn}
             </NeonButton>
           </motion.div>
         ) : (

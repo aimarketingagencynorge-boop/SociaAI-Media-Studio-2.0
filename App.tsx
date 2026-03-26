@@ -1,7 +1,6 @@
 
 import React, { useEffect } from 'react';
 import { useStore } from './store';
-import { AuthProvider, useAuth } from './AuthContext';
 import LandingPage from './components/LandingPage';
 import Onboarding from './components/Onboarding';
 import Dashboard from './components/Dashboard';
@@ -15,28 +14,48 @@ import Planner from './components/Planner';
 import Settings from './components/Settings';
 import Billing from './components/Billing';
 import Integrations from './components/Integrations';
-import Auth from './components/Auth';
+import { auth, db, handleFirestoreError, OperationType, User } from './firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
 
-const AppContent: React.FC = () => {
-  const { onboardingStep, activeView, fetchUserData } = useStore();
-  const { user, token, isLoading } = useAuth();
+const App: React.FC = () => {
+  const { isAuthenticated, onboardingStep, activeView, setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage } = useStore();
 
   useEffect(() => {
-    if (token) {
-      fetchUserData(token);
-    }
-  }, [token, fetchUserData]);
+    const unsubscribeAuth = onAuthStateChanged(auth, (user: User | null) => {
+      if (user) {
+        setFirebaseUser(user);
+        setAuthenticated(true);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-[#0A0A12] flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+        // Sync data from Firestore
+        const userDocRef = doc(db, 'users', user.uid);
+        const unsubscribeFirestore = onSnapshot(userDocRef, (docSnap: any) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
+            if (data.brand) updateBrand(data.brand);
+            if (data.language) setLanguage(data.language);
+            if (data.onboardingStep !== undefined) {
+              // Only update if it's different to avoid loops
+              // Actually, store actions already handle this
+            }
+          }
+        }, (error: any) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
+        });
 
-  if (!user) {
-    return <Auth />;
+        return () => unsubscribeFirestore();
+      } else {
+        setFirebaseUser(null);
+        setAuthenticated(false);
+      }
+    });
+
+    return () => unsubscribeAuth();
+  }, [setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage]);
+
+  if (!isAuthenticated) {
+    return <LandingPage />;
   }
 
   if (onboardingStep > 0) {
@@ -53,7 +72,7 @@ const AppContent: React.FC = () => {
       case 'planner': return <Planner />;
       case 'settings': return <Settings />;
       case 'integrations': return <Integrations />;
-      case 'store': return <Billing />;
+      case 'store': return <Billing />; // Using Billing component for the refined terminal look
       default: return (
         <div className="flex items-center justify-center h-full">
            <div className="text-center glass-panel p-12 rounded-3xl">
@@ -68,14 +87,6 @@ const AppContent: React.FC = () => {
     <AppShell>
       {renderView()}
     </AppShell>
-  );
-};
-
-const App: React.FC = () => {
-  return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
   );
 };
 

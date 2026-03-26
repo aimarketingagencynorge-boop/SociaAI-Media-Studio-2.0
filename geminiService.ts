@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { BrandData, SocialPost, Language, PlatformDNA, Platform } from "./types";
+import { useStore } from "./store";
 
 export interface CampaignContext {
   platform: Platform;
@@ -135,7 +136,9 @@ export class GeminiService {
 
   private getAiInstance() {
     // Access API key from various possible locations in a Vite environment
-    const apiKey = this.manualApiKey ||
+    const storeKey = useStore.getState().geminiApiKey;
+    const apiKey = storeKey ||
+                   this.manualApiKey ||
                    (process.env as any)?.GEMINI_API_KEY ||
                    (process.env as any)?.API_KEY || 
                    (import.meta as any).env?.VITE_API_KEY ||

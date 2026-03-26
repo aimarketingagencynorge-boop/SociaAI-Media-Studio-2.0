@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "credits": { "type": "integer" },
+        "language": { "type": "string", "enum": ["PL", "EN", "NO", "RU"] },
+        "onboardingStep": { "type": "integer" },
+        "geminiApiKey": { "type": "string", "description": "User's own Gemini API key" },
+        "workspaceId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Brand": {
+      "title": "Brand",
+      "description": "Brand DNA and assets",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "industry": { "type": "string" },
+        "toneOfVoice": { "type": "string" },
+        "contentLanguage": { "type": "string" },
+        "colors": { "type": "array", "items": { "type": "object" } },
+        "platformDNA": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Social media post",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "platform": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "scheduled", "sent"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User documents"
+    },
+    "/users/{userId}/brands/{brandId}": {
+      "schema": "Brand",
+      "description": "Brand DNA for a user"
+    },
+    "/users/{userId}/posts/{postId}": {
+      "schema": "Post",
+      "description": "Posts created by a user"
+    }
+  }
+}

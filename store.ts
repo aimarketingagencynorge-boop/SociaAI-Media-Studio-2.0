@@ -2,6 +2,9 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
 import { UserState, Language, BrandData, SocialPost, BrandAsset, MediaAsset, StudioGeneratedAsset, UserIntegration, OutboundEventPayload, BrandReferenceImage, ReferenceSettings } from './types';
+import { db, auth, OperationType, handleFirestoreError } from './firebase';
+import { doc, onSnapshot, setDoc, updateDoc, collection } from 'firebase/firestore';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 export type AppView = 'dashboard' | 'planner' | 'ai-studio' | 'media-lab' | 'analytics' | 'brand-kit' | 'store' | 'settings' | 'integrations';
 
@@ -13,6 +16,8 @@ interface StoreActions {
   setOnboardingStep: (step: number) => void;
   updateBrand: (data: Partial<BrandData>) => void;
   setAuthenticated: (status: boolean) => void;
+  setFirebaseUser: (user: User | null) => void;
+  setGeminiApiKey: (key: string) => void;
   setWeeklyPlan: (posts: SocialPost[]) => void;
   addPost: (post: SocialPost) => void;
   removePost: (id: string) => void;
@@ -44,15 +49,12 @@ interface StoreActions {
   updateIntegration: (id: string, updates: Partial<UserIntegration>) => void;
   toggleIntegration: (id: string) => void;
   triggerOutboundEvent: (event: Omit<OutboundEventPayload, 'userId' | 'workspaceId' | 'createdAt'>) => Promise<void>;
-  fetchUserData: (token: string) => Promise<void>;
-  saveUserData: (token: string) => Promise<void>;
   activeView: AppView;
   videoCount: number;
   isHyperspaceActive: boolean;
   socialLinks: Record<string, boolean>;
   webhookUrl: string;
   editingPost: SocialPost | null;
-  geminiApiKey: string;
 }
 
 const INITIAL_BRAND_DATA: BrandData = {
@@ -171,13 +173,15 @@ const indexedDBStorage: StateStorage = {
   },
 };
 
-export const useStore = create<UserState & StoreActions & { activeView: AppView }>()(
+export const useStore = create<UserState & StoreActions & { activeView: AppView; firebaseUser: User | null; geminiApiKey: string }>()(
   persist(
     (set, get) => ({
       credits: 500,
       language: 'PL',
       onboardingStep: 0,
       isAuthenticated: false,
+      firebaseUser: null,
+      geminiApiKey: '',
       activeView: 'dashboard',
       videoCount: 0,
       isHyperspaceActive: false,
@@ -197,10 +201,17 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
       posts: [],
       mediaAssets: [],
       studioAssets: [],
-      geminiApiKey: '',
 
       setLanguage: (language) => set({ language }),
-      setCredits: (credits) => set({ credits }),
+      setCredits: (credits) => {
+        set({ credits });
+        // Sync with Firebase if authenticated
+        const state = get();
+        if (state.firebaseUser) {
+          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          updateDoc(userDocRef, { credits }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+        }
+      },
       addCredits: (amount) => set((state) => ({ credits: state.credits + amount })),
       deductCredits: (amount) => {
         const current = get().credits;
@@ -210,12 +221,38 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
         }
         return false;
       },
-      setOnboardingStep: (onboardingStep) => set({ onboardingStep }),
-      updateBrand: (data) => set((state) => {
-        const newBrand = { ...(state.brand || INITIAL_BRAND_DATA), ...data };
-        return { brand: newBrand };
-      }),
+      setOnboardingStep: (onboardingStep) => {
+        set({ onboardingStep });
+        // Sync with Firebase if authenticated
+        const state = get();
+        if (state.firebaseUser) {
+          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          updateDoc(userDocRef, { onboardingStep }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+        }
+      },
+      updateBrand: (data) => {
+        set((state) => ({ 
+          brand: { ...(state.brand || INITIAL_BRAND_DATA), ...data } 
+        }));
+        
+        // Sync with Firebase if authenticated
+        const state = get();
+        if (state.firebaseUser) {
+          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          updateDoc(userDocRef, { brand: get().brand }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+        }
+      },
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
+      setFirebaseUser: (firebaseUser) => set({ firebaseUser }),
+      setGeminiApiKey: (geminiApiKey) => {
+        set({ geminiApiKey });
+        // Sync with Firebase if authenticated
+        const state = get();
+        if (state.firebaseUser) {
+          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          updateDoc(userDocRef, { geminiApiKey }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+        }
+      },
       setWeeklyPlan: (posts) => set({ posts }),
       addPost: (post) => set((state) => ({ posts: [...state.posts, post] })),
       removePost: (id) => set((state) => ({ posts: state.posts.filter(p => p.id !== id) })),
@@ -359,88 +396,6 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
 
         await Promise.allSettled(promises);
       },
-
-      fetchUserData: async (token) => {
-        try {
-          const [brandRes, postsRes, settingsRes] = await Promise.all([
-            fetch('/api/brand', { headers: { 'Authorization': `Bearer ${token}` } }),
-            fetch('/api/posts', { headers: { 'Authorization': `Bearer ${token}` } }),
-            fetch('/api/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-          ]);
-
-          if (brandRes.ok && postsRes.ok && settingsRes.ok) {
-            const brandData = await brandRes.json();
-            const postsData = await postsRes.json();
-            const settingsData = await settingsRes.json();
-
-            if (brandData) {
-              set({ 
-                brand: {
-                  ...INITIAL_BRAND_DATA,
-                  name: brandData.brand_bio ? brandData.brand_bio.split('\n')[0] : '', // Simple mapping
-                  description: brandData.brand_bio || '',
-                  coreMission: brandData.mission || '',
-                  whatWeDo: brandData.what_we_do || '',
-                  howWeDoIt: brandData.how_we_do_it || '',
-                  brandPerception: brandData.brand_perception || '',
-                  pillars: brandData.pillars || ['', '', ''],
-                  platformDNA: brandData.platform_dna || INITIAL_BRAND_DATA.platformDNA,
-                  // Add other mappings as needed
-                }
-              });
-            }
-
-            set({ 
-              posts: postsData.map((p: any) => ({
-                id: p.id,
-                dayIndex: p.day_index,
-                platform: p.platform,
-                content: p.text,
-                imageUrl: p.asset_url,
-                isApproved: !!p.is_approved,
-                status: !!p.is_approved ? 'approved' : 'draft'
-              })),
-              geminiApiKey: settingsData?.gemini_api_key || '',
-              webhookUrl: settingsData?.webhook_url || ''
-            });
-          }
-        } catch (e) {
-          console.error("Failed to fetch user data", e);
-        }
-      },
-
-      saveUserData: async (token) => {
-        const state = get();
-        try {
-          await Promise.all([
-            fetch('/api/brand', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({
-                brand_bio: state.brand.description,
-                mission: state.brand.coreMission,
-                what_we_do: state.brand.whatWeDo,
-                how_we_do_it: state.brand.howWeDoIt,
-                brand_perception: state.brand.brandPerception,
-                pillars: state.brand.pillars,
-                platform_dna: state.brand.platformDNA
-              })
-            }),
-            fetch('/api/settings', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({
-                gemini_api_key: state.geminiApiKey,
-                webhook_url: state.webhookUrl
-              })
-            })
-          ]);
-          // Posts are saved individually in actions usually, but we could sync them here too
-        } catch (e) {
-          console.error("Failed to save user data", e);
-        }
-      },
-
       resetMission: () => set({
         onboardingStep: 1,
         posts: [],
@@ -475,7 +430,8 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView 
         integrations: state.integrations,
         webhookUrl: state.webhookUrl,
         userId: state.userId,
-        workspaceId: state.workspaceId
+        workspaceId: state.workspaceId,
+        geminiApiKey: state.geminiApiKey
       }),
     }
   )
