@@ -1,5 +1,5 @@
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useStore } from './store';
 import LandingPage from './components/LandingPage';
 import Onboarding from './components/Onboarding';
@@ -14,45 +14,19 @@ import Planner from './components/Planner';
 import Settings from './components/Settings';
 import Billing from './components/Billing';
 import Integrations from './components/Integrations';
-import { auth, db, handleFirestoreError, OperationType, User } from './firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { AuthProvider, useAuth } from './components/AuthContext';
 
-const App: React.FC = () => {
-  const { isAuthenticated, onboardingStep, activeView, setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage } = useStore();
+const AppContent: React.FC = () => {
+  const { isAuthenticated, onboardingStep, activeView } = useStore();
+  const { loading } = useAuth();
 
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user: User | null) => {
-      if (user) {
-        setFirebaseUser(user);
-        setAuthenticated(true);
-
-        // Sync data from Firestore
-        const userDocRef = doc(db, 'users', user.uid);
-        const unsubscribeFirestore = onSnapshot(userDocRef, (docSnap: any) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
-            if (data.brand) updateBrand(data.brand);
-            if (data.language) setLanguage(data.language);
-            if (data.onboardingStep !== undefined) {
-              // Only update if it's different to avoid loops
-              // Actually, store actions already handle this
-            }
-          }
-        }, (error: any) => {
-          handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
-        });
-
-        return () => unsubscribeFirestore();
-      } else {
-        setFirebaseUser(null);
-        setAuthenticated(false);
-      }
-    });
-
-    return () => unsubscribeAuth();
-  }, [setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage]);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0A0A12] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LandingPage />;
@@ -72,7 +46,7 @@ const App: React.FC = () => {
       case 'planner': return <Planner />;
       case 'settings': return <Settings />;
       case 'integrations': return <Integrations />;
-      case 'store': return <Billing />; // Using Billing component for the refined terminal look
+      case 'store': return <Billing />;
       default: return (
         <div className="flex items-center justify-center h-full">
            <div className="text-center glass-panel p-12 rounded-3xl">
@@ -87,6 +61,14 @@ const App: React.FC = () => {
     <AppShell>
       {renderView()}
     </AppShell>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 };
 
