@@ -48,28 +48,67 @@ const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
 const rawConfigDbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
 const configDbId = (rawConfigDbId && rawConfigDbId !== "(default)") ? rawConfigDbId : "ai-studio-da2c7ce8-8cbd-4a4d-a1f0-c740600206e8";
 
+// Force environment variables to match the target project
+process.env.GOOGLE_CLOUD_PROJECT = projectId;
+process.env.GCLOUD_PROJECT = projectId;
+process.env.GCP_PROJECT = projectId;
+
 if (!configDbId || configDbId === "(default)") {
   console.error("CRITICAL: Firestore Database ID is missing or set to (default).");
 }
 
 console.log(`[Server] Initializing Firebase Admin...`);
-console.log(`[Server] Project ID: ${projectId}`);
-console.log(`[Server] Database ID: ${configDbId}`);
+console.log(`[Server] Target Project ID: ${projectId}`);
+console.log(`[Server] Target Database ID: ${configDbId}`);
+
+let firebaseApp: admin.app.App;
+
+// Check for Service Account Key in environment
+const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT;
+let credential = admin.credential.applicationDefault();
+
+if (serviceAccountKey) {
+  try {
+    const sa = JSON.parse(serviceAccountKey);
+    credential = admin.credential.cert(sa);
+    console.log("[Server] Using Service Account Key from environment.");
+  } catch (e: any) {
+    console.error("[Server] Failed to parse FIREBASE_SERVICE_ACCOUNT:", e.message);
+  }
+}
 
 if (!admin.apps.length) {
   try {
-    // Force use of the project ID from the config or environment
-    admin.initializeApp({
+    firebaseApp = admin.initializeApp({
+      credential,
       projectId: projectId,
     });
-    console.log("[Server] Firebase Admin initialized with explicit Project ID.");
+    console.log("[Server] Firebase Admin initialized successfully.");
   } catch (initError: any) {
     console.error("[Server] Firebase Admin initialization failed:", initError.message);
+    // Fallback to default app if initialization fails
+    firebaseApp = admin.app();
+  }
+} else {
+  firebaseApp = admin.app();
+  console.log("[Server] Using existing Firebase Admin app. Project ID:", firebaseApp.options.projectId);
+  
+  if (firebaseApp.options.projectId !== projectId || serviceAccountKey) {
+    console.warn(`[Server] Existing app project ID (${firebaseApp.options.projectId}) does not match target (${projectId}) or new credentials provided.`);
+    try {
+      firebaseApp = admin.initializeApp({ 
+        credential,
+        projectId 
+      }, 'target-project');
+      console.log("[Server] Initialized named app 'target-project' with correct Project ID and credentials.");
+    } catch (e: any) {
+      console.error("[Server] Failed to initialize named app:", e.message);
+    }
   }
 }
 
 // Canonical Firestore instance
-const db = getFirestore(configDbId);
+const db = getFirestore(firebaseApp, configDbId);
 console.log(`[Server] Firestore instance created for database: ${configDbId}`);
 
 // Initial connection verification
@@ -160,10 +199,16 @@ async function startServer() {
 
       // In this app, workspaceId is currently same as userId for simplicity
       const workspaceId = userId; 
+      
+      console.log(`[Auth Init] Request for userId: ${userId}, email: ${email}`);
+      console.log(`[Auth Init] Using Firestore Project: ${projectId}, Database: ${configDbId}`);
+
       const userRef = db.collection("users").doc(userId);
       const workspaceRef = db.collection("workspaces").doc(workspaceId);
       
+      console.log(`[Auth Init] Attempting to fetch user doc: users/${userId}`);
       const userSnap = await userRef.get();
+      console.log(`[Auth Init] User doc fetched. Exists: ${userSnap.exists}`);
       const STARTER_AMOUNT = 500;
       const workspaceSnap = await workspaceRef.get();
 

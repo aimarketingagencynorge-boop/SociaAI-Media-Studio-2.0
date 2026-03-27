@@ -58,17 +58,7 @@ service cloud.firestore {
     }
 
     // Rules
-    match /{document=**} {
-      allow read, write: if true;
-    }
-
-    match /workspaces/{workspaceId} {
-      allow read: if isWorkspaceMember(workspaceId) || isAdmin();
-      // Only server-side or admin can create/update sensitive fields
-      // But we allow read for members to sync settings
-      allow write: if isAdmin();
-    }
-
+    // User profiles
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && !('role' in request.resource.data);
@@ -88,9 +78,26 @@ service cloud.firestore {
       }
     }
 
+    // Workspaces
+    match /workspaces/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId) || isAdmin() || isOwner(workspaceId);
+      // Only server-side or admin can create/update sensitive fields
+      allow write: if isAdmin() || isOwner(workspaceId);
+      
+      match /credit_history/{historyId} {
+        allow read: if isWorkspaceMember(workspaceId) || isAdmin() || isOwner(workspaceId);
+        allow write: if false; // Only server can write history
+      }
+    }
+
     // Connection test path
     match /test/connection {
       allow read: if true;
+    }
+
+    // Fallback for other collections
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
     }
   }
 }
