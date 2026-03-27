@@ -18,7 +18,7 @@ const Billing = lazy(() => import('./components/Billing'));
 const Integrations = lazy(() => import('./components/Integrations'));
 
 const LoadingSpinner = () => (
-  <div className="min-h-screen bg-[#0A0A12] flex items-center justify-center">
+  <div data-testid="loading-spinner" className="min-h-screen bg-[#0A0A12] flex items-center justify-center">
     <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
   </div>
 );

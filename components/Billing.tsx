@@ -16,6 +16,25 @@ const Billing: React.FC = () => {
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [history, setHistory] = useState<CreditTransaction[]>([]);
 
+  useEffect(() => {
+    if (!firebaseUser || !workspaceId) return;
+
+    const transactionsRef = collection(db, 'workspaces', workspaceId, 'transactions');
+    const q = query(transactionsRef, orderBy('createdAt', 'desc'), limit(10));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const txs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as CreditTransaction[];
+      setHistory(txs);
+    }, (error) => {
+      console.error("Error fetching transactions:", error);
+    });
+
+    return () => unsubscribe();
+  }, [firebaseUser, workspaceId]);
+
   const handleUpdateAISettings = async (updates: any) => {
     try {
       const response = await fetch('/api/ai/settings/update', {

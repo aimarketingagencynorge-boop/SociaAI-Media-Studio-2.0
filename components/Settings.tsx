@@ -42,11 +42,11 @@ const Settings: React.FC = () => {
       const response = await fetch('/api/ai/settings/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: manualKey })
+        body: JSON.stringify({ geminiApiKey: manualKey })
       });
       const result = await response.json();
-      if (result.valid) {
-        await handleUpdateAISettings({ userApiKey: manualKey, activeSource: 'user_api_key' });
+      if (result.success) {
+        await handleUpdateAISettings({ geminiApiKey: manualKey, activeSource: 'user_api_key' });
         setManualKey('');
       } else {
         setValidationError(result.error || "Invalid API Key");
@@ -175,7 +175,7 @@ const Settings: React.FC = () => {
                 
                 {aiSettings?.hasUserApiKey && (
                   <button 
-                    onClick={() => handleUpdateAISettings({ userApiKey: null, activeSource: 'starter_credits' })}
+                    onClick={() => handleUpdateAISettings({ geminiApiKey: "", activeSource: 'starter_credits' })}
                     className="px-4 bg-red-500/10 text-red-500 border border-red-500/30 rounded-xl hover:bg-red-500/20 transition-all"
                   >
                     <Share2 size={16} className="rotate-45" />

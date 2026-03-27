@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Upload, 
@@ -45,6 +45,7 @@ const MediaLab: React.FC = () => {
   
   const t = translations[language];
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -52,6 +53,21 @@ const MediaLab: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'workspace' | 'composer'>('workspace');
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
+  const showSuccess = (msg: string, duration = 3000, callback?: () => void) => {
+    setSuccessMsg(msg);
+    const timeout = setTimeout(() => {
+      setSuccessMsg(null);
+      if (callback) callback();
+    }, duration);
+    timeoutsRef.current.push(timeout);
+  };
 
   // Post Composer State
   const [postDraft, setPostDraft] = useState({
@@ -143,8 +159,7 @@ const MediaLab: React.FC = () => {
         editedUrl: enhanced,
         status: 'edited'
       });
-      setSuccessMsg(t.lab.enhanceSuccess);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      showSuccess(t.lab.enhanceSuccess);
     } catch (e) {
       setError(t.lab.enhanceFailed);
     } finally {
@@ -164,8 +179,7 @@ const MediaLab: React.FC = () => {
         status: 'edited'
       });
       setPostDraft(prev => ({ ...prev, hook: result.hook }));
-      setSuccessMsg(t.lab.thumbnailSuccess);
-      setTimeout(() => setSuccessMsg(null), 3000);
+      showSuccess(t.lab.thumbnailSuccess);
     } catch (e) {
       setError(t.lab.thumbnailFailed);
     } finally {
@@ -233,11 +247,7 @@ const MediaLab: React.FC = () => {
       }
     });
 
-    setSuccessMsg(t.lab.plannerSuccess);
-    setTimeout(() => {
-      setSuccessMsg(null);
-      setActiveView('planner');
-    }, 1500);
+    showSuccess(t.lab.plannerSuccess, 1500, () => setActiveView('planner'));
   };
 
   if (!brand) return (

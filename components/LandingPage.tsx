@@ -115,7 +115,7 @@ const LandingPage: React.FC = () => {
       variants={containerVariants}
       initial="hidden"
       animate="visible"
-      className="relative min-h-screen flex flex-col items-center justify-center p-4 md:p-6 overflow-y-auto bg-[#0A0A12] pb-32"
+      className="relative min-h-screen flex flex-col items-center justify-center p-4 md:p-6 overflow-y-auto bg-transparent pb-32"
     >
       {/* MONOCHROMATIC CORNER HUD - Hidden on small mobile */}
       <div className="hidden sm:block absolute top-10 left-10 text-[9px] font-mono text-cyan-500/40 tracking-[0.4em] uppercase border-l border-cyan-500/20 pl-4 py-1">
@@ -142,9 +142,16 @@ const LandingPage: React.FC = () => {
         </motion.div>
 
         {/* LOGO AREA - RESPONSIVE SCALING */}
-        <motion.div variants={itemVariants} className="relative mb-6 md:mb-8 w-full">
+        <motion.div 
+          variants={itemVariants} 
+          className="relative mb-6 md:mb-8 w-full"
+          animate={{ 
+            filter: ["drop-shadow(0 0 10px rgba(52, 224, 247, 0.3))", "drop-shadow(0 0 20px rgba(52, 224, 247, 0.6))", "drop-shadow(0 0 10px rgba(52, 224, 247, 0.3))"]
+          }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+        >
           <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-orbitron tracking-tighter select-none py-4 md:py-6 hologram-logo flex flex-col sm:flex-row items-center justify-center sm:gap-4 leading-none">
-            <span className="bg-gradient-to-r from-[#8C4DFF] via-[#34E0F7] to-[#8C4DFF] bg-clip-text text-transparent animate-gradient-x text-center">
+            <span className="bg-gradient-to-r from-[#8C4DFF] via-[#34E0F7] to-[#8C4DFF] bg-clip-text text-transparent animate-gradient-x text-center drop-shadow-[0_0_15px_rgba(52,224,247,0.3)]">
               SociAI MediA Studio
             </span>
           </h1>

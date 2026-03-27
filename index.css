@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#0A0A12] text-white font-sans overflow-x-hidden overflow-y-auto;
+    height: 100vh;
+    touch-action: manipulation;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-[inset_0_0_20px_rgba(255,255,255,0.02)];
+  }
+
+  .grid-overlay {
+    @apply fixed inset-0 pointer-events-none z-0;
+    background-image: 
+        linear-gradient(rgba(52, 224, 247, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(52, 224, 247, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    mask-image: radial-gradient(circle at center, black, transparent 80%);
+    will-change: transform;
+    transform: translateZ(0);
+  }
+
+  .starfield {
+    @apply fixed inset-0 pointer-events-none z-0 overflow-hidden;
+    background: radial-gradient(circle at center, #1a1a2e 0%, #0a0a12 100%);
+  }
+
+  .star {
+    @apply absolute bg-white rounded-full;
+    animation: twinkle var(--duration, 3s) infinite ease-in-out;
+  }
+
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.3; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+
+  .hologram-logo {
+    filter: drop-shadow(0 0 10px rgba(52, 224, 247, 0.5));
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: rgba(10, 10, 18, 0.8); }
+::-webkit-scrollbar-thumb { background: rgba(52, 224, 247, 0.3); border-radius: 10px; }
+
+body, html { overscroll-behavior: none; }

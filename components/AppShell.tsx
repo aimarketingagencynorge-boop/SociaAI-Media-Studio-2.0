@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, 
@@ -28,6 +28,13 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const t = translations[language];
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDayMenuOpen, setIsDayMenuOpen] = useState(true);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   const menuItems: { id: AppView, label: string, icon: React.ReactNode }[] = [
     { id: 'dashboard', label: t.nav.dashboard, icon: <LayoutDashboard size={18} /> },
@@ -54,12 +61,13 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const scrollToDay = (dayId: number) => {
     if (activeView !== 'dashboard') setActiveView('dashboard');
     setIsMobileMenuOpen(false);
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       const element = document.getElementById(`day-${dayId}`);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     }, 150);
+    timeoutsRef.current.push(timeout);
   };
 
   const NavContent = () => (

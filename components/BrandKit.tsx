@@ -82,6 +82,20 @@ const BrandKit: React.FC = () => {
   const [toastMsg, setToastMsg] = useState('DNA_SYNC_COMPLETE');
   const [editingImage, setEditingImage] = useState<BrandReferenceImage | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const timeoutsRef = React.useRef<NodeJS.Timeout[]>([]);
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
+  const triggerToast = (msg: string, duration = 3000) => {
+    setToastMsg(msg);
+    setShowToast(true);
+    const timeout = setTimeout(() => setShowToast(false), duration);
+    timeoutsRef.current.push(timeout);
+  };
 
   const consistencyScore = useMemo(() => {
     if (!brand) return 0;
@@ -121,9 +135,7 @@ const BrandKit: React.FC = () => {
 
     const currentCount = (brand.referenceImages || []).length;
     if (currentCount >= 20) {
-      setToastMsg(t.brandKit.maxReferenceImagesReached);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
+      triggerToast(t.brandKit.maxReferenceImagesReached);
       return;
     }
 
@@ -162,9 +174,7 @@ const BrandKit: React.FC = () => {
     
     if (newImages.length > 0) {
       addReferenceImages(newImages);
-      setToastMsg(`${newImages.length} ${t.brandKit.referenceImagesAdded || 'Images Added'}`);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
+      triggerToast(`${newImages.length} ${t.brandKit.referenceImagesAdded || 'Images Added'}`);
     }
     
     // Clear the input so the same files can be selected again
@@ -197,12 +207,11 @@ const BrandKit: React.FC = () => {
       }
     });
 
-    setTimeout(() => {
+    const timeout = setTimeout(() => {
       setIsSyncing(false);
-      setToastMsg(t.brandKit.dnaSyncComplete);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
+      triggerToast(t.brandKit.dnaSyncComplete);
     }, 1500);
+    timeoutsRef.current.push(timeout);
   };
 
   const handleRefineBrand = async () => {
@@ -223,9 +232,7 @@ const BrandKit: React.FC = () => {
 
       setRefinePrompt('');
       setShowRefineInput(false);
-      setToastMsg(t.brandKit.dnaRefinedByAI);
-      setShowToast(true);
-      setTimeout(() => setShowToast(false), 3000);
+      triggerToast(t.brandKit.dnaRefinedByAI);
     } catch (e) {
       console.error(e);
       alert(t.brandKit.dnaRefinementFailed);

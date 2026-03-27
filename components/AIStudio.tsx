@@ -445,19 +445,25 @@ const AIStudio: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <h3 className="text-xl font-black text-red-500 uppercase tracking-tight">
-                      {error.includes("API key") ? t.common.errors.apiTitle : t.common.errors.general}
+                      {error.includes("API key") 
+                        ? t.common.errors.apiTitle 
+                        : error.includes("resource-exhausted") || error.includes("credits")
+                          ? t.common.errors.creditsTitle
+                          : t.common.errors.general}
                     </h3>
                     <p className="text-white/60 text-sm max-w-md mx-auto">
                       {error.includes("API key") 
                         ? t.common.errors.apiDesc
-                        : error}
+                        : error.includes("resource-exhausted") || error.includes("credits")
+                          ? t.common.errors.creditsDesc
+                          : error}
                     </p>
                   </div>
                   <div className="flex gap-4">
                     <NeonButton variant="purple" onClick={handleGenerate}>
                       <RefreshCw size={16} /> {t.common.errors.retry}
                     </NeonButton>
-                    {error.includes("API key") && (
+                    {(error.includes("API key") || error.includes("resource-exhausted") || error.includes("credits")) && (
                       <button 
                         onClick={() => setActiveView('settings')} 
                         className="px-6 py-3 rounded-xl border border-white/10 text-white/40 font-bold uppercase text-[10px] tracking-widest hover:bg-white/5 transition-all"

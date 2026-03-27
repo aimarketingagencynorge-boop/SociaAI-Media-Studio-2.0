@@ -201,9 +201,18 @@ async function startServer() {
   // Verification will happen on first request.
 
   const app = express();
-  const PORT = 3000;
+  // The PORT is hardcoded to 3000 in the AI Studio environment.
+  // We use process.env.PORT to support external deployments like Cloud Run.
+  const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+  // Request logger for API
+  app.use('/api', (req, res, next) => {
+    console.log(`[API Request] ${req.method} ${req.url}`);
+    next();
+  });
 
   // Auth Initialization Endpoint (Grant starter credits)
   app.post("/api/auth/init", async (req, res) => {
@@ -500,6 +509,12 @@ async function startServer() {
   // Health check
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  // Catch-all for unmatched API routes
+  app.all("/api/*all", (req, res) => {
+    console.warn(`[API 404] Unmatched API route: ${req.method} ${req.url}`);
+    res.status(404).json({ error: "API route not found", method: req.method, url: req.url });
   });
 
   // Vite middleware for development

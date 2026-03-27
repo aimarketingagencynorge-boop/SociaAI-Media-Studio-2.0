@@ -47,6 +47,8 @@ export const translations: Record<Language, any> = {
       errors: {
         apiTitle: "BŁĄD_ŁĄCZA_NEURONOWEGO",
         apiDesc: "Nie wykryto aktywnego klucza API. Skonfiguruj Łącze Neuronowe w ustawieniach.",
+        creditsTitle: "BRAK_PALIWA_FORCE",
+        creditsDesc: "Twoje ForceCredits wyczerpały się. Doładuj konto w Fuel Station lub użyj własnego klucza API.",
         retry: "PONÓW_POŁĄCZENIE",
         settings: "OTWÓRZ_USTAWIENIA",
         general: "Wystąpił błąd podczas przetwarzania AI."
@@ -492,6 +494,8 @@ export const translations: Record<Language, any> = {
       errors: {
         apiTitle: "NEURAL_LINK_ERROR",
         apiDesc: "No active API key detected. Please configure your Neural Link in settings.",
+        creditsTitle: "FORCE_FUEL_EMPTY",
+        creditsDesc: "Your ForceCredits have run out. Recharge at the Fuel Station or use your own API key.",
         retry: "RETRY_CONNECTION",
         settings: "OPEN_SETTINGS",
         general: "An error occurred during AI processing."

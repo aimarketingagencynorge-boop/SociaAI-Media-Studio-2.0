@@ -5,72 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>SociAI MediA Studio - May the AI be with you</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            margin: 0;
-            background-color: #0A0A12;
-            color: white;
-            font-family: 'Inter', sans-serif;
-            overflow-x: hidden;
-            overflow-y: auto;
-            touch-action: manipulation;
-            height: 100vh;
-        }
-        #root {
-            min-height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        .font-orbitron { font-family: 'Orbitron', sans-serif; }
-        .font-mono { font-family: 'JetBrains Mono', monospace; }
-        
-        /* Hardware Accelerated Grid */
-        .grid-overlay {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background-image: 
-                linear-gradient(rgba(52, 224, 247, 0.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(52, 224, 247, 0.05) 1px, transparent 1px);
-            background-size: 50px 50px;
-            pointer-events: none;
-            z-index: 0;
-            will-change: transform;
-            transform: translateZ(0);
-        }
-
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.02);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.02);
-        }
-
-        .starfield {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            z-index: -1;
-            transform: translateZ(0);
-        }
-        .star {
-            position: absolute;
-            background: white;
-            border-radius: 50%;
-            opacity: 0.4;
-        }
-        
-        .hologram-logo {
-            filter: drop-shadow(0 0 10px rgba(52, 224, 247, 0.5));
-        }
-
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: rgba(10, 10, 18, 0.8); }
-        ::-webkit-scrollbar-thumb { background: rgba(52, 224, 247, 0.3); border-radius: 10px; }
-        
-        body, html { overscroll-behavior: none; }
-    </style>
 </head>
 <body>
     <div class="grid-overlay"></div>

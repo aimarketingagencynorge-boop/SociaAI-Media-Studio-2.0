@@ -234,10 +234,11 @@ export class GeminiService {
     try {
       const prompt = `Audit this business website: ${url.trim()}. 
         Extract: official name, detailed description of services/products, industry, core mission, and brand colors.
-        Report must be in ${langName}.`;
+        Be concise and focused. Report must be in ${langName}.`;
       
       intelligence = await this.callGatekeeper('scan_brand', prompt, 'gemini-3-flash-preview', {
-        tools: [{ googleSearch: {} }]
+        tools: [{ googleSearch: {} }],
+        maxOutputTokens: 4096
       });
     } catch (searchError: any) {
       console.warn("Search grounding failed, falling back to direct analysis", searchError);
@@ -248,12 +249,14 @@ export class GeminiService {
     }
 
     try {
-      const dnaPrompt = `Based on this intelligence: "${intelligence}", create a structured Brand DNA JSON.
+      const dnaPrompt = `Based on this intelligence: "${intelligence.slice(0, 10000)}", create a structured Brand DNA JSON.
         URL: ${url}.
-        Language: ${langName}.`;
+        Language: ${langName}.
+        Ensure the JSON is valid and concise.`;
 
       const responseText = await this.callGatekeeper('ai_enhance', dnaPrompt, 'gemini-3-flash-preview', {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        maxOutputTokens: 4096
       });
 
       const cleaned = this.cleanJsonResponse(responseText || '{}');
@@ -278,7 +281,8 @@ export class GeminiService {
         Return a complete updated Brand DNA JSON object.`;
 
       const responseText = await this.callGatekeeper('ai_enhance', refinePrompt, 'gemini-3-flash-preview', {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        maxOutputTokens: 4096
       });
 
       const cleaned = this.cleanJsonResponse(responseText || '{}');
@@ -310,7 +314,8 @@ export class GeminiService {
         Return JSON format.`;
 
       const responseText = await this.callGatekeeper('generate_post', prompt, 'gemini-3-flash-preview', {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        maxOutputTokens: 4096
       });
 
       const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
@@ -356,7 +361,8 @@ export class GeminiService {
       const prompt = `${contextPrompt} ${platformContext} Create a high-impact thumbnail brief for a video described as: "${videoDescription}". Language: ${langName}. JSON format with 'imageBrief' and 'hookText'.`;
       
       const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        maxOutputTokens: 4096
       });
 
       const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
@@ -378,7 +384,8 @@ export class GeminiService {
       const prompt = `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post for this ${mediaType}: "${mediaDescription}". Language: ${langName}. JSON format.`;
       
       const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
-        responseMimeType: "application/json"
+        responseMimeType: "application/json",
+        maxOutputTokens: 4096
       });
 
       const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));

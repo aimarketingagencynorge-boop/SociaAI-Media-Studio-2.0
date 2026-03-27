@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
@@ -56,6 +56,13 @@ const Dashboard: React.FC = () => {
   const [transmittingId, setTransmittingId] = useState<string | null>(null);
   const [platformSelectorDay, setPlatformSelectorDay] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
+
+  useEffect(() => {
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   const days = [
     { name: t.days.mon.toUpperCase(), id: 0, date: '11.11' },
@@ -331,11 +338,12 @@ const Dashboard: React.FC = () => {
         }
       });
 
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         updatePost(post.id, { status: 'scheduled', isApproved: false });
         setHyperspace(false);
         setTransmittingId(null);
       }, 2000);
+      timeoutsRef.current.push(timeout);
     } catch (e: any) {
       setHyperspace(false);
       setTransmittingId(null);

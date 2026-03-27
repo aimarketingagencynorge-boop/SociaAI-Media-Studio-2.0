@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { doc, onSnapshot, collection } from 'firebase/firestore';
@@ -27,6 +27,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [initStatus, setInitStatus] = useState<'idle' | 'auth' | 'firestore' | 'workspace' | 'ready'>('idle');
+  const unsubscribers = useRef<(() => void)[]>([]);
+
+  const clearFirestoreSubscriptions = () => {
+    unsubscribers.current.forEach((unsub: () => void) => unsub());
+    unsubscribers.current = [];
+  };
   const { 
     setAuthenticated, 
     setFirebaseUser, 
@@ -46,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     setInitStatus('auth');
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+      clearFirestoreSubscriptions();
       setCurrentUser(user);
       setFirebaseUser(user);
       setAuthenticated(!!user);
@@ -79,9 +86,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            // We no longer read brand from the user doc as it's moved to a subcollection
-            if (data.language) setLanguage(data.language);
-            if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep);
+            if (data.language) setLanguage(data.language, true);
+            if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep, true);
             
             if (data.workspaceId) {
               setWorkspaceId(data.workspaceId);
@@ -92,6 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}`, false);
           if (!workspaceId) setLoading(false);
         });
+        unsubscribers.current.push(unsubscribeUser);
 
         // 3. Sync Brand Data (Subcollection)
         const brandDocRef = doc(db, 'users', user.uid, 'brands', 'default');
@@ -103,6 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}/brands/default`, false);
         });
+        unsubscribers.current.push(unsubscribeBrand);
 
         // 3a. Sync Reference Images (Subcollection)
         const refImagesColRef = collection(db, 'users', user.uid, 'brands', 'default', 'referenceImages');
@@ -117,6 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}/brands/default/referenceImages`, false);
         });
+        unsubscribers.current.push(unsubscribeReferenceImages);
 
         // 3b. Sync Assets (Subcollection)
         const assetsColRef = collection(db, 'users', user.uid, 'brands', 'default', 'assets');
@@ -131,6 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}/brands/default/assets`, false);
         });
+        unsubscribers.current.push(unsubscribeAssets);
 
         // 4. Sync Posts (Subcollection)
         const postsColRef = collection(db, 'users', user.uid, 'posts');
@@ -145,6 +155,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}/posts`, false);
         });
+        unsubscribers.current.push(unsubscribePosts);
 
         // 5. Sync Media Assets (Subcollection)
         const mediaAssetsColRef = collection(db, 'users', user.uid, 'mediaAssets');
@@ -159,6 +170,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}/mediaAssets`, false);
         });
+        unsubscribers.current.push(unsubscribeMediaAssets);
 
         // 6. Sync Studio Assets (Subcollection)
         const studioAssetsColRef = collection(db, 'users', user.uid, 'studioAssets');
@@ -173,16 +185,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}/studioAssets`, false);
         });
+        unsubscribers.current.push(unsubscribeStudioAssets);
 
-        return () => {
-          unsubscribeUser();
-          unsubscribeBrand();
-          unsubscribeReferenceImages();
-          unsubscribeAssets();
-          unsubscribePosts();
-          unsubscribeMediaAssets();
-          unsubscribeStudioAssets();
-        };
       } else {
         setAiSettings(null);
         setWorkspaceId('');
@@ -192,7 +196,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    return () => unsubscribeAuth();
+    return () => {
+      unsubscribeAuth();
+      clearFirestoreSubscriptions();
+    };
   }, [setAuthenticated, setFirebaseUser, updateBrand, setLanguage, setOnboardingStep, setUserId, setWorkspaceId, setAiSettings, setIsLoadingAICredits, setWeeklyPlan, setMediaAssets, setStudioAssets]);
 
   // 3. Workspace Bootstrap
