@@ -177,6 +177,12 @@ export const translations: Record<Language, any> = {
       hubFooter: "Centralny Węzeł Konfiguracyjny Signatures • SociAI Media Studio Engine",
       zapierDesc: "Automatyczna synchronizacja postów z Twoim ekosystemem Zapier. Każda udana transmisja AI Studio zostanie skierowana pod ten adres."
     },
+    billing: {
+      terminalTitle: "Bezpieczny Terminal Płatniczy",
+      recent: "Ostatnie Transmisje",
+      invoice: "Faktura",
+      secureMsg: "Szyfrowanie Kwantowe: Aktywne"
+    },
     studio: {
       title: "Visual Forge",
       platform: "Platforma",
@@ -414,6 +420,12 @@ export const translations: Record<Language, any> = {
       imageBriefDefault: "Atmosferyczna scena zgodna z brand kitem",
       refineTextPrompt: "Zmień tylko treść tekstu (caption), zachowaj styl i mood marki.",
       refineImagePrompt: "Zmień tylko wizualne aspekty obrazu, zachowaj spójność z brand bookiem.",
+      genStatus: {
+        text: "REKALIBRACJA TREŚCI...",
+        vision: "GENEROWANIE NOWEJ WIZJI...",
+        system: "REKONSTRUKCJA SYSTEMOWA..."
+      },
+      insufficientCredits: "Niewystarczająca ilość kredytów paliwowych (FC). Doładuj konto.",
       signal: "SYGNAŁ",
       social: "Social",
       targetPlatform: "PLATFORMA_DOCELOWA",
@@ -848,6 +860,12 @@ export const translations: Record<Language, any> = {
       imageBriefDefault: "Atmospheric scene in line with brand kit",
       refineTextPrompt: "Change only the caption content, keep the brand style and mood.",
       refineImagePrompt: "Change only the visual aspects of the image, maintain consistency with the brand book.",
+      genStatus: {
+        text: "RECALIBRATING CONTENT...",
+        vision: "GENERATING NEW VISION...",
+        system: "SYSTEM RECONSTRUCTION..."
+      },
+      insufficientCredits: "Insufficient Fuel Credits (FC). Please recharge.",
       signal: "SIGNAL",
       social: "Social",
       targetPlatform: "TARGET_PLATFORM",
@@ -1221,6 +1239,12 @@ export const translations: Record<Language, any> = {
       imageBriefDefault: "Atmosfærisk scene i tråd med merkevarepakken",
       refineTextPrompt: "Endre bare bildetekstinnholdet, behold merkevarestilen og stemningen.",
       refineImagePrompt: "Endre bare de visuelle aspektene ved bildet, oppretthold konsistens med merkevareboken.",
+      genStatus: {
+        text: "REKALIBRERER INNHOLD...",
+        vision: "GENERERER NY VISJON...",
+        system: "SYSTEMREKONSTRUKSJON..."
+      },
+      insufficientCredits: "Utilstrekkelig Fuel Credits (FC). Vennligst fyll på.",
       signal: "SIGNAL",
       social: "Sosial",
       targetPlatform: "MÅLPLATTFORM",
@@ -1592,6 +1616,12 @@ export const translations: Record<Language, any> = {
       linkedToBrand: "СВЯЗАНО С БРЕНДОМ",
       initiateGlobalSync: "ЗАПУСТИТЬ ГЛОБАЛЬНУЮ СИНХРОНИЗАЦИЮ",
       imageBriefDefault: "Атмосферная сцена в соответствии с бренд-китом",
+      genStatus: {
+        text: "ПЕРЕКАЛИБРОВКА КОНТЕНТА...",
+        vision: "ГЕНЕРАЦИЯ НОВОГО ВИДЕНИЯ...",
+        system: "СИСТЕМНАЯ РЕКОНСТРУКЦИЯ..."
+      },
+      insufficientCredits: "Недостаточно топливных кредитов (FC). Пожалуйста, пополните счет.",
       refineTextPrompt: "Измените только содержание подписи, сохраните стиль и настроение бренда.",
       refineImagePrompt: "Измените только визуальные аспекты изображения, сохраните соответствие бренд-буку.",
       signal: "СИГНАЛ",

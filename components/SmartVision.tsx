@@ -8,9 +8,10 @@ interface Props {
   showHook?: boolean;
   className?: string;
   isRefining?: boolean;
+  status?: string;
 }
 
-const SmartVision: React.FC<Props> = ({ imageUrl, hookText, showHook = true, className = "", isRefining = false }) => {
+const SmartVision: React.FC<Props> = ({ imageUrl, hookText, showHook = true, className = "", isRefining = false, status }) => {
   return (
     <div className={`relative overflow-hidden bg-[#0A0A12] group border border-white/5 shadow-2xl ${className}`}>
       {/* Background Image - Clean Render */}
@@ -92,7 +93,9 @@ const SmartVision: React.FC<Props> = ({ imageUrl, hookText, showHook = true, cla
               <div className="absolute inset-4 border border-[#8C4DFF]/20 rounded-full animate-pulse" />
             </div>
             <div className="space-y-3 text-center">
-              <p className="text-[#34E0F7] font-orbitron text-xs tracking-[0.6em] uppercase animate-pulse font-black">Reconstructing_Pixels</p>
+              <p className="text-[#34E0F7] font-orbitron text-xs tracking-[0.6em] uppercase animate-pulse font-black">
+                {status || "Reconstructing_Pixels"}
+              </p>
               <div className="flex items-center justify-center gap-4">
                  <p className="text-white/20 text-[8px] font-mono uppercase tracking-widest">Syncing with Brand DNA</p>
                  <div className="w-20 h-[1px] bg-white/10" />

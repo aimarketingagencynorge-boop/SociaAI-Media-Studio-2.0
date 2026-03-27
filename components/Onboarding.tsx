@@ -291,7 +291,7 @@ const Onboarding: React.FC = () => {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={handleScan} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
+                      <NeonButton variant="cyan" className="w-full py-5 font-black text-lg" onClick={() => handleScan()} disabled={isScanning}>SCAN UNIVERSE</NeonButton>
                       {!isScanning && (
                         <button 
                           onClick={() => {

@@ -174,6 +174,8 @@ const Dashboard: React.FC = () => {
         setRegeneratingId(null);
         setRegeneratingType(null);
       }
+    } else {
+      setError(t.dashboard.insufficientCredits || "Insufficient Fuel Credits (FC). Please recharge.");
     }
   };
 
@@ -342,10 +344,10 @@ const Dashboard: React.FC = () => {
         setHyperspace(false);
         setTransmittingId(null);
       }, 2000);
-    } catch (e) {
+    } catch (e: any) {
       setHyperspace(false);
       setTransmittingId(null);
-      alert(t.dashboard.transmitFailed);
+      setError(e.message || t.dashboard.transmitFailed);
     }
   };
 
@@ -474,6 +476,7 @@ const Dashboard: React.FC = () => {
                             hookText={post.hook} 
                             showHook={post.showHook}
                             isRefining={(regeneratingId === post.id && (regeneratingType === 'vision' || regeneratingType === 'system')) || transmittingId === post.id}
+                            status={regeneratingId === post.id && regeneratingType ? t.dashboard.genStatus[regeneratingType] : undefined}
                             className="h-full w-full"
                           />
                          
@@ -532,7 +535,7 @@ const Dashboard: React.FC = () => {
                                    exit={{ opacity: 0 }}
                                    className="absolute inset-0 z-20"
                                  >
-                                   <TextLoader />
+                                   <TextLoader status={t.dashboard.genStatus[regeneratingType]} />
                                  </motion.div>
                                )}
                             </AnimatePresence>

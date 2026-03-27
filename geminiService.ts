@@ -34,12 +34,20 @@ export class GeminiService {
     const sig = brand.signature;
     if (!sig || !sig.enabled) return '';
 
+    const lang = brand.contentLanguage || 'EN';
+    const labels = {
+      'PL': { address: 'Adres', phone: 'Tel', email: 'Email', web: 'WWW' },
+      'EN': { address: 'Address', phone: 'Phone', email: 'Email', web: 'Web' },
+      'NO': { address: 'Adresse', phone: 'Tlf', email: 'E-post', web: 'Web' },
+      'RU': { address: 'Адрес', phone: 'Тел', email: 'Email', web: 'Сайт' }
+    }[lang] || { address: 'Address', phone: 'Phone', email: 'Email', web: 'Web' };
+
     const parts = [];
     if (sig.showBrandName && brand.name) parts.push(brand.name);
-    if (sig.showAddress && brand.address) parts.push(`📍 Adres: ${brand.address}`);
-    if (sig.showPhone && brand.phone) parts.push(`📞 Tel: ${brand.phone}`);
-    if (sig.showEmail && brand.email) parts.push(`📧 Email: ${brand.email}`);
-    if (sig.showCtaLink && brand.ctaLink) parts.push(`🌐 WWW: ${brand.ctaLink}`);
+    if (sig.showAddress && brand.address) parts.push(`📍 ${labels.address}: ${brand.address}`);
+    if (sig.showPhone && brand.phone) parts.push(`📞 ${labels.phone}: ${brand.phone}`);
+    if (sig.showEmail && brand.email) parts.push(`📧 ${labels.email}: ${brand.email}`);
+    if (sig.showCtaLink && brand.ctaLink) parts.push(`🌐 ${labels.web}: ${brand.ctaLink}`);
     
     return parts.length > 0 ? `\n\n---\n${parts.join('\n')}` : '';
   }
@@ -148,15 +156,23 @@ export class GeminiService {
     if (!apiKey) {
       // If we are in the browser and have access to aistudio helper
       if (typeof window !== 'undefined' && (window as any).aistudio) {
-        (window as any).aistudio.hasSelectedApiKey().then((hasKey: boolean) => {
-          if (!hasKey) (window as any).aistudio.openSelectKey();
-        });
+        (window as any).aistudio.openSelectKey();
       }
       
       console.error("GeminiService: API_KEY not found in any expected location.");
       throw new Error("AUTH_KEY_MISSING: The system could not find a valid API Key. Please select your API key in the settings.");
     }
     return new GoogleGenAI({ apiKey });
+  }
+
+  private async handleApiError(error: any) {
+    const errorMsg = error?.message || String(error);
+    if (errorMsg.includes("Requested entity was not found") || errorMsg.includes("API_KEY_INVALID")) {
+      if (typeof window !== 'undefined' && (window as any).aistudio) {
+        await (window as any).aistudio.openSelectKey();
+      }
+    }
+    throw error;
   }
 
   public buildCampaignContext(post: Partial<SocialPost>, brand: BrandData): CampaignContext {
@@ -233,12 +249,20 @@ export class GeminiService {
       }
     }
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Using Flash for better visual understanding
-      contents: { parts }
-    });
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview', // Using Flash for better visual understanding
+        contents: { parts }
+      });
 
-    return response.text || `Professional cinematic photo for ${context.brand.name} about ${context.topic}`;
+      return response.text || `Professional cinematic photo for ${context.brand.name} about ${context.topic}`;
+    } catch (e: any) {
+      console.error("Image prompt generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
+      return `Professional cinematic photo for ${context.brand.name} about ${context.topic}`;
+    }
   }
 
   async generateImage(prompt: string, brand: BrandData, context?: CampaignContext): Promise<string> {
@@ -259,11 +283,12 @@ export class GeminiService {
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3.1-flash-image-preview',
         contents: { parts: [{ text: finalPrompt }] },
         config: { 
           imageConfig: { 
-            aspectRatio: context?.platform === 'tiktok' ? "9:16" : context?.platform === 'instagram' ? "1:1" : "16:9" 
+            aspectRatio: context?.platform === 'tiktok' ? "9:16" : context?.platform === 'instagram' ? "1:1" : "16:9",
+            imageSize: "1K"
           } 
         }
       });
@@ -271,8 +296,11 @@ export class GeminiService {
       for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Image generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
     }
     return `https://loremflickr.com/800/800/${brand.industry.split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
@@ -285,7 +313,6 @@ export class GeminiService {
     let sources: string[] = [];
 
     try {
-      // STAGE 1: Research using the most reliable model for search tasks
       const searchResponse = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Audit this business website: ${url.trim()}. 
@@ -301,6 +328,9 @@ export class GeminiService {
       sources = groundingChunks.map((chunk: any) => chunk.web?.uri).filter(Boolean);
     } catch (searchError: any) {
       console.warn("Search grounding failed, falling back to direct analysis", searchError);
+      if (searchError.message?.includes("Requested entity was not found") || searchError.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(searchError);
+      }
       // Fallback: Try without search tools if search fails (might be a key restriction)
       const fallbackResponse = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -311,43 +341,45 @@ export class GeminiService {
       intelligence = fallbackResponse.text || "";
     }
 
-    // STAGE 2: Structured Data Mapping
-    const mappingResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Using Flash for faster mapping and better schema compliance
-      contents: `Based on this intelligence: "${intelligence}", create a structured Brand DNA JSON.
-      URL: ${url}.
-      Language: ${langName}.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            description: { type: Type.STRING },
-            industry: { type: Type.STRING },
-            colors: { 
-              type: Type.ARRAY, 
-              items: { 
-                type: Type.OBJECT, 
-                properties: { name: { type: Type.STRING }, hex: { type: Type.STRING } } 
-              } 
-            },
-            toneOfVoice: { type: Type.STRING },
-            toneConfidence: { type: Type.NUMBER }
-          },
-          required: ["name", "description", "industry", "colors", "toneOfVoice", "toneConfidence"]
-        }
-      }
-    });
-
     try {
-      const cleaned = this.cleanJsonResponse(mappingResponse.text || '{}');
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview', // Using Flash for faster mapping and better schema compliance
+        contents: `Based on this intelligence: "${intelligence}", create a structured Brand DNA JSON.
+        URL: ${url}.
+        Language: ${langName}.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              description: { type: Type.STRING },
+              industry: { type: Type.STRING },
+              colors: { 
+                type: Type.ARRAY, 
+                items: { 
+                  type: Type.OBJECT, 
+                  properties: { name: { type: Type.STRING }, hex: { type: Type.STRING } } 
+                } 
+              },
+              toneOfVoice: { type: Type.STRING },
+              toneConfidence: { type: Type.NUMBER }
+            },
+            required: ["name", "description", "industry", "colors", "toneOfVoice", "toneConfidence"]
+          }
+        }
+      });
+
+      const cleaned = this.cleanJsonResponse(response.text || '{}');
       return {
         data: JSON.parse(cleaned),
         sources: sources
       };
-    } catch (e) {
-      console.error("DNA Mapping Error", e, mappingResponse.text);
+    } catch (e: any) {
+      console.error("DNA Mapping Error", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
       throw new Error("Neural link failed to decode brand DNA. Try again.");
     }
   }
@@ -357,39 +389,42 @@ export class GeminiService {
     const langName = this.getLanguageName(targetLanguage);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `${context} Refine the following Brand DNA based on this request: "${prompt}". 
-      Current Brand Data: ${JSON.stringify(brand)}.
-      Language: ${langName}.
-      Return a complete updated Brand DNA JSON object.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            description: { type: Type.STRING },
-            industry: { type: Type.STRING },
-            usp: { type: Type.STRING },
-            toneOfVoice: { type: Type.STRING },
-            voiceProfile: { type: Type.STRING },
-            coreMission: { type: Type.STRING },
-            whatWeDo: { type: Type.STRING },
-            howWeDoIt: { type: Type.STRING },
-            brandPerception: { type: Type.STRING },
-            pillars: { type: Type.ARRAY, items: { type: Type.STRING } },
-            humanTouch: { type: Type.STRING }
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `${context} Refine the following Brand DNA based on this request: "${prompt}". 
+        Current Brand Data: ${JSON.stringify(brand)}.
+        Language: ${langName}.
+        Return a complete updated Brand DNA JSON object.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              description: { type: Type.STRING },
+              industry: { type: Type.STRING },
+              usp: { type: Type.STRING },
+              toneOfVoice: { type: Type.STRING },
+              voiceProfile: { type: Type.STRING },
+              coreMission: { type: Type.STRING },
+              whatWeDo: { type: Type.STRING },
+              howWeDoIt: { type: Type.STRING },
+              brandPerception: { type: Type.STRING },
+              pillars: { type: Type.ARRAY, items: { type: Type.STRING } },
+              humanTouch: { type: Type.STRING }
+            }
           }
         }
-      }
-    });
+      });
 
-    try {
       const cleaned = this.cleanJsonResponse(response.text || '{}');
       return JSON.parse(cleaned);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Brand DNA Refinement Error", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
       throw new Error("Failed to refine brand DNA.");
     }
   }
@@ -409,35 +444,43 @@ export class GeminiService {
       ----------------------------------
     ` : '';
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post about: ${topic}. 
-      Language: ${langName}. 
-      Ensure the content matches the platform's focus and goal.
-      Return JSON format.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            content: { type: Type.STRING },
-            hook: { type: Type.STRING },
-            hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
-            imageBrief: { type: Type.STRING }
-          },
-          required: ["content", "hook", "hashtags", "imageBrief"]
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post about: ${topic}. 
+        Language: ${langName}. 
+        Ensure the content matches the platform's focus and goal.
+        Return JSON format.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              content: { type: Type.STRING },
+              hook: { type: Type.STRING },
+              hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
+              imageBrief: { type: Type.STRING }
+            },
+            required: ["content", "hook", "hashtags", "imageBrief"]
+          }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
-    const campaignContext = this.buildCampaignContext({ ...data, platform }, brand);
-    const imageUrl = await this.generateImage(data.imageBrief, brand, campaignContext);
-    return {
-      ...data,
-      content: this.buildFinalContent(data.content, brand),
-      imagePreviewUrl: imageUrl
-    };
+      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const campaignContext = this.buildCampaignContext({ ...data, platform }, brand);
+      const imageUrl = await this.generateImage(data.imageBrief, brand, campaignContext);
+      return {
+        ...data,
+        content: this.buildFinalContent(data.content, brand),
+        imagePreviewUrl: imageUrl
+      };
+    } catch (e: any) {
+      console.error("Social post generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
+      throw e;
+    }
   }
 
   async enhanceImage(base64Image: string, prompt: string, brand: BrandData): Promise<string> {
@@ -446,20 +489,28 @@ export class GeminiService {
       const brandPrompt = `Enhance this image for ${brand.name}. Command: ${prompt}. Style: ${brand.voiceProfile}. High quality marketing visual. Return the enhanced image.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3.1-flash-image-preview',
         contents: {
           parts: [
             { inlineData: { data: base64Image.split(',')[1], mimeType: "image/png" } },
             { text: brandPrompt }
           ]
+        },
+        config: {
+          imageConfig: {
+            imageSize: "1K"
+          }
         }
       });
 
       for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Image enhancement failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
     }
     return base64Image;
   }
@@ -470,26 +521,34 @@ export class GeminiService {
     const contextPrompt = this.getBrandContextPrompt(brand, targetLanguage);
     const platformContext = this.getPlatformContextPrompt('youtube', brand);
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${platformContext} Create a high-impact thumbnail brief for a video described as: "${videoDescription}". Language: ${langName}. JSON format with 'imageBrief' and 'hookText'.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            imageBrief: { type: Type.STRING },
-            hookText: { type: Type.STRING }
-          },
-          required: ["imageBrief", "hookText"]
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `${contextPrompt} ${platformContext} Create a high-impact thumbnail brief for a video described as: "${videoDescription}". Language: ${langName}. JSON format with 'imageBrief' and 'hookText'.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              imageBrief: { type: Type.STRING },
+              hookText: { type: Type.STRING }
+            },
+            required: ["imageBrief", "hookText"]
+          }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
-    const campaignContext = this.buildCampaignContext({ topic: videoDescription, hook: data.hookText, platform: 'youtube' }, brand);
-    const url = await this.generateImage(data.imageBrief, brand, campaignContext);
-    return { url, hook: data.hookText };
+      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const campaignContext = this.buildCampaignContext({ topic: videoDescription, hook: data.hookText, platform: 'youtube' }, brand);
+      const url = await this.generateImage(data.imageBrief, brand, campaignContext);
+      return { url, hook: data.hookText };
+    } catch (e: any) {
+      console.error("Thumbnail generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
+      throw e;
+    }
   }
 
   async draftPostFromMedia(mediaType: 'image' | 'video', mediaDescription: string, platform: Platform, brand: BrandData, targetLanguage: Language) {
@@ -498,28 +557,36 @@ export class GeminiService {
     const platformContext = this.getPlatformContextPrompt(platform, brand);
     const langName = this.getLanguageName(targetLanguage);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post for this ${mediaType}: "${mediaDescription}". Language: ${langName}. JSON format.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            content: { type: Type.STRING },
-            hook: { type: Type.STRING },
-            hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }
-          },
-          required: ["content", "hook", "hashtags"]
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post for this ${mediaType}: "${mediaDescription}". Language: ${langName}. JSON format.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              content: { type: Type.STRING },
+              hook: { type: Type.STRING },
+              hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["content", "hook", "hashtags"]
+          }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
-    return {
-      ...data,
-      content: this.buildFinalContent(data.content, brand)
-    };
+      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      return {
+        ...data,
+        content: this.buildFinalContent(data.content, brand)
+      };
+    } catch (e: any) {
+      console.error("Post from media generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
+      throw e;
+    }
   }
 
   async generateWeeklyPlan(brand: BrandData, targetLanguage: Language, weekIndex: number = 0): Promise<SocialPost[]> {
@@ -535,52 +602,60 @@ export class GeminiService {
         GOAL: ${dna.goal}
       `).join('\n');
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Upgraded for better planning
-      contents: `${contextPrompt} 
-      --- PLATFORM STRATEGIES ---
-      ${allPlatformsContext}
-      ---------------------------
-      Create a 7-day social media plan with a mix of platforms (facebook, instagram, linkedin, tiktok). 
-      Language: ${langName}. 
-      Ensure each post follows the specific platform strategy.
-      Return as a JSON array.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              dayIndex: { type: Type.INTEGER },
-              platform: { type: Type.STRING },
-              topic: { type: Type.STRING },
-              hook: { type: Type.STRING },
-              content: { type: Type.STRING },
-              hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
-              imageBrief: { type: Type.STRING }
-            },
-            required: ["dayIndex", "platform", "topic", "hook", "content", "hashtags", "imageBrief"]
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview', // Upgraded for better planning
+        contents: `${contextPrompt} 
+        --- PLATFORM STRATEGIES ---
+        ${allPlatformsContext}
+        ---------------------------
+        Create a 7-day social media plan with a mix of platforms (facebook, instagram, linkedin, tiktok). 
+        Language: ${langName}. 
+        Ensure each post follows the specific platform strategy.
+        Return as a JSON array.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                dayIndex: { type: Type.INTEGER },
+                platform: { type: Type.STRING },
+                topic: { type: Type.STRING },
+                hook: { type: Type.STRING },
+                content: { type: Type.STRING },
+                hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                imageBrief: { type: Type.STRING }
+              },
+              required: ["dayIndex", "platform", "topic", "hook", "content", "hashtags", "imageBrief"]
+            }
           }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(this.cleanJsonResponse(response.text || '[]'));
-    return await Promise.all(data.map(async (item: any) => {
-      const campaignContext = this.buildCampaignContext(item, brand);
-      return {
-        ...item,
-        id: Math.random().toString(36).substr(2, 9),
-        weekIndex,
-        status: 'draft',
-        isApproved: false,
-        showHook: true,
-        signatureEnabled: true,
-        content: this.buildFinalContent(item.content, brand),
-        imagePreviewUrl: await this.generateImage(item.imageBrief, brand, campaignContext)
-      };
-    }));
+      const data = JSON.parse(this.cleanJsonResponse(response.text || '[]'));
+      return await Promise.all(data.map(async (item: any) => {
+        const campaignContext = this.buildCampaignContext(item, brand);
+        return {
+          ...item,
+          id: Math.random().toString(36).substr(2, 9),
+          weekIndex,
+          status: 'draft',
+          isApproved: false,
+          showHook: true,
+          signatureEnabled: true,
+          content: this.buildFinalContent(item.content, brand),
+          imagePreviewUrl: await this.generateImage(item.imageBrief, brand, campaignContext)
+        };
+      }));
+    } catch (e: any) {
+      console.error("Weekly plan generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
+      throw e;
+    }
   }
 
   async refineText(post: SocialPost, refinePrompt: string, brand: BrandData, targetLanguage: Language) {
@@ -589,29 +664,37 @@ export class GeminiService {
     const platformContext = this.getPlatformContextPrompt(post.platform, brand);
     const langName = this.getLanguageName(targetLanguage);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${platformContext} Refine post CAPTION/CONTENT ONLY. DO NOT change the image hook or the image itself. 
-      Command: "${refinePrompt}". 
-      Original Topic: ${post.topic}. 
-      Language: ${langName}. 
-      Return JSON with 'content' field only.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            content: { type: Type.STRING }
-          },
-          required: ["content"]
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `${contextPrompt} ${platformContext} Refine post CAPTION/CONTENT ONLY. DO NOT change the image hook or the image itself. 
+        Command: "${refinePrompt}". 
+        Original Topic: ${post.topic}. 
+        Language: ${langName}. 
+        Return JSON with 'content' field only.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              content: { type: Type.STRING }
+            },
+            required: ["content"]
+          }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
-    return {
-      content: this.buildFinalContent(data.content, brand)
-    };
+      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      return {
+        content: this.buildFinalContent(data.content, brand)
+      };
+    } catch (e: any) {
+      console.error("Text refinement failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
+      throw e;
+    }
   }
 
   async refineImage(post: SocialPost, refinePrompt: string, brand: BrandData) {
@@ -619,28 +702,36 @@ export class GeminiService {
     const contextPrompt = this.getBrandContextPrompt(brand, brand.contentLanguage);
     const platformContext = this.getPlatformContextPrompt(post.platform, brand);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${platformContext} Refine post IMAGE BRIEF ONLY: "${refinePrompt}". Original: ${post.topic}. JSON.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            imageBrief: { type: Type.STRING }
-          },
-          required: ["imageBrief"]
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `${contextPrompt} ${platformContext} Refine post IMAGE BRIEF ONLY: "${refinePrompt}". Original: ${post.topic}. JSON.`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              imageBrief: { type: Type.STRING }
+            },
+            required: ["imageBrief"]
+          }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
-    const campaignContext = this.buildCampaignContext(post, brand);
-    const imageUrl = await this.generateImage(data.imageBrief, brand, campaignContext);
-    return {
-      imageBrief: data.imageBrief,
-      imagePreviewUrl: imageUrl
-    };
+      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const campaignContext = this.buildCampaignContext(post, brand);
+      const imageUrl = await this.generateImage(data.imageBrief, brand, campaignContext);
+      return {
+        imageBrief: data.imageBrief,
+        imagePreviewUrl: imageUrl
+      };
+    } catch (e: any) {
+      console.error("Image refinement failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
+      throw e;
+    }
   }
 
   async refineContent(post: SocialPost, refinePrompt: string, brand: BrandData, targetLanguage: Language) {
@@ -706,11 +797,12 @@ export class GeminiService {
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3.1-flash-image-preview',
         contents,
         config: {
           imageConfig: {
-            aspectRatio: platform === 'instagram' ? "1:1" : platform === 'tiktok' ? "9:16" : "16:9"
+            aspectRatio: platform === 'instagram' ? "1:1" : platform === 'tiktok' ? "9:16" : "16:9",
+            imageSize: "1K"
           }
         }
       });
@@ -718,8 +810,11 @@ export class GeminiService {
       for (const part of response.candidates?.[0]?.content?.parts || []) {
         if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Studio image generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
     }
     return `https://loremflickr.com/1080/1080/${brand.industry.split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
@@ -775,8 +870,11 @@ export class GeminiService {
         const blob = await response.blob();
         return URL.createObjectURL(blob);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Studio video generation failed", e);
+      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
+        await this.handleApiError(e);
+      }
     }
     return "https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-background-with-blue-lines-41344-large.mp4";
   }

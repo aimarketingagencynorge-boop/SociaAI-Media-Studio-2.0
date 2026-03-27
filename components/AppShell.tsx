@@ -76,7 +76,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         {user && (
           <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5 flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#8C4DFF] to-[#34E0F7] flex items-center justify-center text-[10px] font-black text-white">
-              {user.displayName?.charAt(0) || user.email.charAt(0)}
+              {user.displayName?.charAt(0) || user.email?.charAt(0) || 'U'}
             </div>
             <div className="overflow-hidden">
               <p className="text-[10px] font-orbitron text-white uppercase truncate">{user.displayName || 'Commander'}</p>

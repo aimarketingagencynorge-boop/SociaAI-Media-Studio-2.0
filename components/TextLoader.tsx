@@ -5,9 +5,10 @@ import { Rocket } from 'lucide-react';
 
 interface TextLoaderProps {
   className?: string;
+  status?: string;
 }
 
-const TextLoader: React.FC<TextLoaderProps> = ({ className }) => {
+const TextLoader: React.FC<TextLoaderProps> = ({ className, status }) => {
   return (
     <div className={`absolute inset-0 z-10 bg-black/80 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center overflow-hidden ${className}`}>
       <div className="relative w-full max-w-[80%] space-y-4">
@@ -55,7 +56,7 @@ const TextLoader: React.FC<TextLoaderProps> = ({ className }) => {
             transition={{ duration: 1.5, repeat: Infinity }}
             className="text-[10px] font-orbitron text-[#34E0F7] uppercase tracking-[0.3em]"
           >
-            Generating Signal...
+            {status || "Generating Signal..."}
           </motion.p>
         </div>
       </div>

@@ -7,7 +7,9 @@ import { useStore } from './store';
 
 interface AuthContextType {
   currentUser: User | null;
+  user: User | null;
   loading: boolean;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -55,9 +57,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribeAuth();
   }, [setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage]);
 
+  const logout = async () => {
+    try {
+      await auth.signOut();
+      setAuthenticated(false);
+      setFirebaseUser(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
   const value = {
     currentUser,
-    loading
+    user: currentUser,
+    loading,
+    logout
   };
 
   return (
