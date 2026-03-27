@@ -30,6 +30,7 @@ interface StoreActions {
   setWebhookUrl: (url: string) => void;
   resetMission: () => void;
   setEditingPost: (post: SocialPost | null) => void;
+  setUserId: (id: string) => void;
   addBrandAsset: (asset: BrandAsset) => void;
   removeBrandAsset: (id: string) => void;
   updateBrandAssetTag: (id: string, tag: BrandAsset['tag']) => void;
@@ -264,6 +265,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       incrementVideoCount: () => set((state) => ({ videoCount: state.videoCount + 1 })),
       setHyperspace: (isHyperspaceActive) => set({ isHyperspaceActive }),
       setEditingPost: (editingPost) => set({ editingPost }),
+      setUserId: (userId) => set({ userId }),
       toggleSocialLink: (platform) => set((state) => ({
         socialLinks: { ...state.socialLinks, [platform]: !state.socialLinks[platform] }
       })),

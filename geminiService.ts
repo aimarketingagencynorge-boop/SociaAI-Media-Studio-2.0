@@ -283,12 +283,11 @@ export class GeminiService {
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
+        model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: finalPrompt }] },
         config: { 
           imageConfig: { 
             aspectRatio: context?.platform === 'tiktok' ? "9:16" : context?.platform === 'instagram' ? "1:1" : "16:9",
-            imageSize: "1K"
           } 
         }
       });
@@ -489,7 +488,7 @@ export class GeminiService {
       const brandPrompt = `Enhance this image for ${brand.name}. Command: ${prompt}. Style: ${brand.voiceProfile}. High quality marketing visual. Return the enhanced image.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
+        model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
             { inlineData: { data: base64Image.split(',')[1], mimeType: "image/png" } },
@@ -498,7 +497,6 @@ export class GeminiService {
         },
         config: {
           imageConfig: {
-            imageSize: "1K"
           }
         }
       });
@@ -797,12 +795,11 @@ export class GeminiService {
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-image-preview',
+        model: 'gemini-2.5-flash-image',
         contents,
         config: {
           imageConfig: {
             aspectRatio: platform === 'instagram' ? "1:1" : platform === 'tiktok' ? "9:16" : "16:9",
-            imageSize: "1K"
           }
         }
       });

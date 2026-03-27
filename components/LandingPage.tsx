@@ -14,9 +14,11 @@ const LandingPage: React.FC = () => {
   const t = translations[language];
   const [showContinueDialog, setShowContinueDialog] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const handleLogin = async () => {
     setIsLoggingIn(true);
+    setLoginError(null);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
@@ -35,19 +37,33 @@ const LandingPage: React.FC = () => {
           onboardingStep: 1,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${user.uid}`));
+        }).catch((e: any) => {
+          handleFirestoreError(e, OperationType.CREATE, `users/${user.uid}`);
+          throw e;
+        });
+        setOnboardingStep(1);
       } else {
         // Load existing user data into store
         const data = userDoc.data();
         if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
         if (data.brand) updateBrand(data.brand);
         if (data.language) setLanguage(data.language);
+        if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep);
       }
 
       setFirebaseUser(user);
       setAuthenticated(true);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed:", error);
+      let msg = "Login failed. Please try again.";
+      if (error.code === 'auth/unauthorized-domain') {
+        msg = "Unauthorized domain. Please add this domain to your Firebase Console authorized domains.";
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        msg = "Login popup was closed. Please try again.";
+      } else if (error.message?.includes('Missing or insufficient permissions')) {
+        msg = "Firestore permission error. Please check your security rules.";
+      }
+      setLoginError(msg);
     } finally {
       setIsLoggingIn(false);
     }
@@ -141,6 +157,16 @@ const LandingPage: React.FC = () => {
         </motion.p>
 
         {/* BUTTONS - MOBILE STACKING */}
+        {loginError && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }} 
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-orbitron uppercase tracking-widest max-w-md text-center"
+          >
+            {loginError}
+          </motion.div>
+        )}
+
         {!showContinueDialog ? (
           <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-6 md:gap-10 justify-center items-center w-full max-w-md sm:max-w-none">
             <div className="relative group w-full sm:w-auto">

@@ -25,13 +25,14 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const { setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage } = useStore();
+  const { setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage, setOnboardingStep, setUserId } = useStore();
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setFirebaseUser(user);
       setAuthenticated(!!user);
+      if (user) setUserId(user.uid);
 
       if (user) {
         // Sync data from Firestore
@@ -42,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
             if (data.brand) updateBrand(data.brand);
             if (data.language) setLanguage(data.language);
+            if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep);
           }
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
@@ -55,7 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribeAuth();
-  }, [setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage]);
+  }, [setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage, setOnboardingStep, setUserId]);
 
   const logout = async () => {
     try {
