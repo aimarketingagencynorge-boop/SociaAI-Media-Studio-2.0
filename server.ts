@@ -262,12 +262,12 @@ async function startServer() {
         };
         await historyRef.set(transactionRecord);
         
-        // Ensure user has workspaceId
-        // Also cleanup legacy large fields if they exist
+        // Ensure user has workspaceId and credits field for frontend sync
         await userRef.set({ 
           uid: userId,
           email: email || "",
           workspaceId: workspaceId,
+          credits: STARTER_AMOUNT,
           updatedAt: new Date().toISOString(),
           brand: admin.firestore.FieldValue.delete(),
           posts: admin.firestore.FieldValue.delete(),
@@ -276,6 +276,42 @@ async function startServer() {
         }, { merge: true });
 
         return res.json({ success: true, message: "Starter credits granted", credits: STARTER_AMOUNT, workspaceId });
+      }
+
+      // REPAIR LOGIC: If workspace exists but has 0 credits and user is still in onboarding step 1
+      const workspaceData = workspaceSnap.data() as AIAccessSettings;
+      const userData = userSnap.data();
+      
+      if (workspaceData.creditBalance === 0 && (!userData?.onboardingStep || userData.onboardingStep <= 1)) {
+        // Double check if they ever had a grant
+        const historySnap = await workspaceRef.collection("credit_history")
+          .where("actionType", "==", "initial_grant")
+          .limit(1)
+          .get();
+          
+        if (historySnap.empty) {
+          console.log(`[Auth Init] Repairing user ${userId}: 0 credits found in onboarding. Granting 500.`);
+          await workspaceRef.update({ 
+            creditBalance: STARTER_AMOUNT,
+            starterCreditsGranted: true,
+            updatedAt: new Date().toISOString()
+          });
+          await userRef.update({ 
+            credits: STARTER_AMOUNT,
+            updatedAt: new Date().toISOString()
+          });
+          
+          const historyRef = workspaceRef.collection("credit_history").doc();
+          await historyRef.set({
+            userId,
+            amount: STARTER_AMOUNT,
+            actionType: 'initial_grant',
+            source: 'starter',
+            description: 'Starter credits (Repair)',
+            createdAt: new Date().toISOString()
+          });
+          return res.json({ success: true, message: "Starter credits repaired", credits: STARTER_AMOUNT, workspaceId });
+        }
       }
 
       // Migration/Fix: If activeSource is user_api_key but key is missing/invalid, reset to starter_credits

@@ -76,12 +76,13 @@ const Onboarding: React.FC = () => {
   const handleScan = async () => {
     if (!url) return;
     
-    if (isLoadingAICredits) {
+    const hasCredits = (aiSettings?.creditBalance && aiSettings.creditBalance > 0) || (credits > 0);
+    const isInitializing = isLoadingAICredits || (!aiSettings && workspaceId);
+
+    if (isInitializing) {
       addLog("Initializing Neural Link... Please wait.", "system");
       return;
     }
-
-    const hasCredits = (aiSettings?.creditBalance && aiSettings.creditBalance > 0) || (credits > 0);
 
     if (!hasCredits) {
       addLog("INSUFFICIENT_CREDITS: Mission requires energy. Please check your credit balance.", "error");
@@ -211,12 +212,12 @@ const Onboarding: React.FC = () => {
                       variant="cyan" 
                       className="w-full py-5 font-black text-lg" 
                       onClick={() => handleScan()} 
-                      disabled={isScanning || !url || ((!aiSettings?.creditBalance || aiSettings.creditBalance <= 0) && credits <= 0)}
+                      disabled={isScanning || !url || isLoadingAICredits || (!aiSettings && !!workspaceId) || ((!aiSettings?.creditBalance || aiSettings.creditBalance <= 0) && credits <= 0)}
                     >
-                      {isScanning ? 'SCANNING...' : 'SCAN UNIVERSE'}
+                      {isScanning ? 'SCANNING...' : (isLoadingAICredits || (!aiSettings && !!workspaceId)) ? 'INITIALIZING...' : 'SCAN UNIVERSE'}
                     </NeonButton>
                     
-                    {((!aiSettings?.creditBalance || aiSettings.creditBalance <= 0) && credits <= 0) && !isLoadingAICredits && (
+                    {((!aiSettings?.creditBalance || aiSettings.creditBalance <= 0) && credits <= 0) && !isLoadingAICredits && (!!aiSettings || !workspaceId) && (
                       <p className="text-[9px] font-orbitron text-center text-magenta-500 uppercase tracking-widest animate-pulse">
                         INSUFFICIENT CREDITS. PLEASE RECHARGE IN SETTINGS.
                       </p>

@@ -19,6 +19,7 @@ interface StoreActions {
   setAuthenticated: (status: boolean) => void;
   setFirebaseUser: (user: User | null) => void;
   setAiSettings: (settings: AIAccessSettings | null) => void;
+  setCredits: (credits: number) => void;
   setIsLoadingAICredits: (loading: boolean) => void;
   setWorkspaceId: (id: string) => void;
   setWeeklyPlan: (posts: SocialPost[], skipSync?: boolean) => void;
@@ -303,6 +304,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
       setFirebaseUser: (firebaseUser) => set({ firebaseUser }),
       setAiSettings: (aiSettings) => set({ aiSettings, credits: aiSettings?.creditBalance || 0 }),
+      setCredits: (credits) => set({ credits }),
       setIsLoadingAICredits: (isLoadingAICredits) => set({ isLoadingAICredits }),
       setWorkspaceId: (workspaceId) => set({ workspaceId }),
       setWeeklyPlan: (posts, skipSync = false) => {

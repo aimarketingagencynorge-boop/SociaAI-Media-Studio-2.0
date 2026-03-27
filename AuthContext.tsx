@@ -41,6 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setOnboardingStep, 
     setUserId, 
     setAiSettings, 
+    setCredits,
     setIsLoadingAICredits, 
     setWorkspaceId, 
     workspaceId, 
@@ -64,6 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // 1. Initialize user on backend (Auth Init)
         const initUser = async () => {
           try {
+            setIsLoadingAICredits(true);
             const response = await fetch('/api/auth/init', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -75,11 +77,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           } catch (err) {
             console.error("[Auth Init] Failed to init user credits:", err);
+            setIsLoadingAICredits(false);
           }
         };
         initUser();
-
-        setIsLoadingAICredits(true);
         
         // 2. Sync User Data (Firestore Init)
         const userDocRef = doc(db, 'users', user.uid);
@@ -88,6 +89,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const data = docSnap.data();
             if (data.language) setLanguage(data.language, true);
             if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep, true);
+            if (typeof data.credits === 'number') setCredits(data.credits);
             
             if (data.workspaceId) {
               setWorkspaceId(data.workspaceId);
@@ -214,10 +216,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (docSnap.exists()) {
         const data = docSnap.data() as AIAccessSettings;
         setAiSettings(data);
+        setIsLoadingAICredits(false);
+        setInitStatus('ready');
+        setLoading(false);
+      } else {
+        // If it doesn't exist yet, we don't set loading to false
+        // because /api/auth/init should create it soon.
+        // However, we don't want to hang forever.
+        // We'll let the backend init handle it.
+        console.log("[AuthContext] Workspace doc does not exist yet, waiting...");
       }
-      setIsLoadingAICredits(false);
-      setInitStatus('ready');
-      setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, `workspaces/${workspaceId}`, false);
       setIsLoadingAICredits(false);
