@@ -41,16 +41,14 @@ service cloud.firestore {
     }
 
     function isValidUser(data) {
-      return data.keys().hasAll(['uid', 'email']) &&
-             data.uid is string &&
+      return data.uid is string &&
              data.email is string &&
              (!('credits' in data) || data.credits is number) &&
              (!('geminiApiKey' in data) || (data.geminiApiKey is string && data.geminiApiKey.size() < 200));
     }
 
     function isValidWorkspace(data) {
-      return data.keys().hasAll(['workspaceId', 'aiProvider', 'activeSource']) &&
-             data.workspaceId is string &&
+      return data.workspaceId is string &&
              data.aiProvider == 'gemini' &&
              data.activeSource in ['starter_credits', 'purchased_credits', 'user_api_key'] &&
              data.creditBalance is number &&
@@ -61,19 +59,30 @@ service cloud.firestore {
     // User profiles
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUser(request.resource.data) && !('role' in request.resource.data);
-      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
-                    (request.resource.data.role == resource.data.role || isAdmin());
+      allow create: if isAuthenticated() && request.auth.uid == userId && !('role' in request.resource.data);
+      allow update: if (isOwner(userId) && (request.resource.data.role == resource.data.role || isAdmin())) || isAdmin();
 
       match /brands/{brandId} {
         allow read, write: if isOwner(userId) || isAdmin();
+        
+        match /referenceImages/{imageId} {
+          allow read, write: if isOwner(userId) || isAdmin();
+        }
+        
+        match /assets/{assetId} {
+          allow read, write: if isOwner(userId) || isAdmin();
+        }
       }
 
       match /posts/{postId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
       
-      match /assets/{assetId} {
+      match /mediaAssets/{assetId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /studioAssets/{assetId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
     }
@@ -93,11 +102,6 @@ service cloud.firestore {
     // Connection test path
     match /test/connection {
       allow read: if true;
-    }
-
-    // Fallback for other collections
-    match /{document=**} {
-      allow read, write: if isAuthenticated();
     }
   }
 }

@@ -2,9 +2,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection } from 'firebase/firestore';
 import { useStore } from './store';
-import { AIAccessSettings } from './types';
+import { AIAccessSettings, SocialPost } from './types';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -27,7 +27,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [initStatus, setInitStatus] = useState<'idle' | 'auth' | 'firestore' | 'workspace' | 'ready'>('idle');
-  const { setAuthenticated, setFirebaseUser, updateBrand, setLanguage, setOnboardingStep, setUserId, setAiSettings, setIsLoadingAICredits, setWorkspaceId, workspaceId } = useStore();
+  const { 
+    setAuthenticated, 
+    setFirebaseUser, 
+    updateBrand, 
+    setLanguage, 
+    setOnboardingStep, 
+    setUserId, 
+    setAiSettings, 
+    setIsLoadingAICredits, 
+    setWorkspaceId, 
+    workspaceId, 
+    setWeeklyPlan,
+    setMediaAssets,
+    setStudioAssets
+  } = useStore();
 
   useEffect(() => {
     setInitStatus('auth');
@@ -65,7 +79,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
-            if (data.brand) updateBrand(data.brand);
+            // We no longer read brand from the user doc as it's moved to a subcollection
             if (data.language) setLanguage(data.language);
             if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep);
             
@@ -76,11 +90,99 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}`, false);
-          // If user doc fails, we still might have workspaceId from store or initUser
           if (!workspaceId) setLoading(false);
         });
 
-        return () => unsubscribeUser();
+        // 3. Sync Brand Data (Subcollection)
+        const brandDocRef = doc(db, 'users', user.uid, 'brands', 'default');
+        const unsubscribeBrand = onSnapshot(brandDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            updateBrand(data, true); // skipSync = true
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/brands/default`, false);
+        });
+
+        // 3a. Sync Reference Images (Subcollection)
+        const refImagesColRef = collection(db, 'users', user.uid, 'brands', 'default', 'referenceImages');
+        const unsubscribeReferenceImages = onSnapshot(refImagesColRef, (querySnap) => {
+          const images: any[] = [];
+          querySnap.forEach((doc) => {
+            images.push(doc.data());
+          });
+          if (images.length > 0) {
+            updateBrand({ referenceImages: images as any }, true); // skipSync = true
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/brands/default/referenceImages`, false);
+        });
+
+        // 3b. Sync Assets (Subcollection)
+        const assetsColRef = collection(db, 'users', user.uid, 'brands', 'default', 'assets');
+        const unsubscribeAssets = onSnapshot(assetsColRef, (querySnap) => {
+          const assets: any[] = [];
+          querySnap.forEach((doc) => {
+            assets.push(doc.data());
+          });
+          if (assets.length > 0) {
+            updateBrand({ assets: assets as any }, true); // skipSync = true
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/brands/default/assets`, false);
+        });
+
+        // 4. Sync Posts (Subcollection)
+        const postsColRef = collection(db, 'users', user.uid, 'posts');
+        const unsubscribePosts = onSnapshot(postsColRef, (querySnap) => {
+          const posts: SocialPost[] = [];
+          querySnap.forEach((doc) => {
+            posts.push(doc.data() as SocialPost);
+          });
+          if (posts.length > 0) {
+            setWeeklyPlan(posts, true); // skipSync = true
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/posts`, false);
+        });
+
+        // 5. Sync Media Assets (Subcollection)
+        const mediaAssetsColRef = collection(db, 'users', user.uid, 'mediaAssets');
+        const unsubscribeMediaAssets = onSnapshot(mediaAssetsColRef, (querySnap) => {
+          const assets: any[] = [];
+          querySnap.forEach((doc) => {
+            assets.push(doc.data());
+          });
+          if (assets.length > 0) {
+            setMediaAssets(assets);
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/mediaAssets`, false);
+        });
+
+        // 6. Sync Studio Assets (Subcollection)
+        const studioAssetsColRef = collection(db, 'users', user.uid, 'studioAssets');
+        const unsubscribeStudioAssets = onSnapshot(studioAssetsColRef, (querySnap) => {
+          const assets: any[] = [];
+          querySnap.forEach((doc) => {
+            assets.push(doc.data());
+          });
+          if (assets.length > 0) {
+            setStudioAssets(assets);
+          }
+        }, (error) => {
+          handleFirestoreError(error, OperationType.GET, `users/${user.uid}/studioAssets`, false);
+        });
+
+        return () => {
+          unsubscribeUser();
+          unsubscribeBrand();
+          unsubscribeReferenceImages();
+          unsubscribeAssets();
+          unsubscribePosts();
+          unsubscribeMediaAssets();
+          unsubscribeStudioAssets();
+        };
       } else {
         setAiSettings(null);
         setWorkspaceId('');
@@ -91,7 +193,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     return () => unsubscribeAuth();
-  }, [setAuthenticated, setFirebaseUser, updateBrand, setLanguage, setOnboardingStep, setUserId, setWorkspaceId, setAiSettings, setIsLoadingAICredits]);
+  }, [setAuthenticated, setFirebaseUser, updateBrand, setLanguage, setOnboardingStep, setUserId, setWorkspaceId, setAiSettings, setIsLoadingAICredits, setWeeklyPlan, setMediaAssets, setStudioAssets]);
 
   // 3. Workspace Bootstrap
   useEffect(() => {

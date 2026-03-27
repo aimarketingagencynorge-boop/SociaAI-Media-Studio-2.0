@@ -79,6 +79,14 @@
     "/users/{userId}/posts/{postId}": {
       "schema": "Post",
       "description": "Posts created by a user"
+    },
+    "/users/{userId}/mediaAssets/{assetId}": {
+      "schema": "object",
+      "description": "Media assets (images/videos) uploaded or generated"
+    },
+    "/users/{userId}/studioAssets/{assetId}": {
+      "schema": "object",
+      "description": "Assets generated in the AI Studio"
     }
   }
 }

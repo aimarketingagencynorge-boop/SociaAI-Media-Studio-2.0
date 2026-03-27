@@ -3,7 +3,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
 import { UserState, Language, BrandData, SocialPost, BrandAsset, MediaAsset, StudioGeneratedAsset, UserIntegration, OutboundEventPayload, BrandReferenceImage, ReferenceSettings, AIAccessSettings, AISource } from './types';
 import { db, auth, OperationType, handleFirestoreError } from './firebase';
-import { doc, onSnapshot, setDoc, updateDoc, collection } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, updateDoc, collection, deleteDoc, deleteField } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
 
 export type AppView = 'dashboard' | 'planner' | 'ai-studio' | 'media-lab' | 'analytics' | 'brand-kit' | 'store' | 'settings' | 'integrations';
@@ -11,16 +11,16 @@ export type AppView = 'dashboard' | 'planner' | 'ai-studio' | 'media-lab' | 'ana
 interface StoreActions {
   setLanguage: (lang: Language) => void;
   setOnboardingStep: (step: number) => void;
-  updateBrand: (data: Partial<BrandData>) => void;
+  updateBrand: (data: Partial<BrandData>, skipSync?: boolean) => void;
   setAuthenticated: (status: boolean) => void;
   setFirebaseUser: (user: User | null) => void;
   setAiSettings: (settings: AIAccessSettings | null) => void;
   setIsLoadingAICredits: (loading: boolean) => void;
   setWorkspaceId: (id: string) => void;
-  setWeeklyPlan: (posts: SocialPost[]) => void;
-  addPost: (post: SocialPost) => void;
-  removePost: (id: string) => void;
-  updatePost: (id: string, updates: Partial<SocialPost>) => void;
+  setWeeklyPlan: (posts: SocialPost[], skipSync?: boolean) => void;
+  addPost: (post: SocialPost, skipSync?: boolean) => void;
+  removePost: (id: string, skipSync?: boolean) => void;
+  updatePost: (id: string, updates: Partial<SocialPost>, skipSync?: boolean) => void;
   setActiveView: (view: AppView) => void;
   setAutopilotRunning: (status: boolean) => void;
   incrementVideoCount: () => void;
@@ -38,11 +38,13 @@ interface StoreActions {
   removeReferenceImage: (id: string) => void;
   updateReferenceImage: (id: string, updates: Partial<BrandReferenceImage>) => void;
   updateReferenceSettings: (settings: Partial<ReferenceSettings>) => void;
-  addMediaAsset: (asset: MediaAsset) => void;
-  removeMediaAsset: (id: string) => void;
-  updateMediaAsset: (id: string, updates: Partial<MediaAsset>) => void;
-  addStudioAsset: (asset: StudioGeneratedAsset) => void;
-  removeStudioAsset: (id: string) => void;
+  addMediaAsset: (asset: MediaAsset, skipSync?: boolean) => void;
+  removeMediaAsset: (id: string, skipSync?: boolean) => void;
+  updateMediaAsset: (id: string, updates: Partial<MediaAsset>, skipSync?: boolean) => void;
+  addStudioAsset: (asset: StudioGeneratedAsset, skipSync?: boolean) => void;
+  removeStudioAsset: (id: string, skipSync?: boolean) => void;
+  setMediaAssets: (assets: MediaAsset[]) => void;
+  setStudioAssets: (assets: StudioGeneratedAsset[]) => void;
   syncAllPostsWithBrand: (buildFinalContent: (content: string, brand: BrandData) => string) => void;
   addIntegration: (integration: UserIntegration) => void;
   removeIntegration: (id: string) => void;
@@ -213,10 +215,10 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         const state = get();
         if (state.firebaseUser) {
           const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          setDoc(userDocRef, { onboardingStep }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          setDoc(userDocRef, { onboardingStep, updatedAt: new Date().toISOString() }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
         }
       },
-      updateBrand: (data) => {
+      updateBrand: (data, skipSync = false) => {
         // Remove undefined values from data to prevent them from overwriting existing values with undefined
         const cleanData = JSON.parse(JSON.stringify(data, (key, value) => {
           if (value === undefined) return null;
@@ -227,10 +229,12 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
           brand: { ...(state.brand || INITIAL_BRAND_DATA), ...cleanData } 
         }));
         
+        if (skipSync) return;
+
         // Sync with Firebase if authenticated
         const state = get();
         if (state.firebaseUser) {
-          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          const brandDocRef = doc(db, 'users', state.firebaseUser.uid, 'brands', 'default');
           
           // Ensure we don't send undefined to Firestore (redundant but safe)
           const brandToSync = JSON.parse(JSON.stringify(get().brand, (key, value) => {
@@ -238,7 +242,49 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
             return value;
           }));
 
-          setDoc(userDocRef, { brand: brandToSync }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          // Exclude large arrays from the main brand document to avoid 1MB limit
+          const { referenceImages, assets, ...brandMetadata } = brandToSync;
+
+          // We sync the brand metadata to its own document
+          setDoc(brandDocRef, { ...brandMetadata, updatedAt: new Date().toISOString() }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/brands/default`));
+          
+          // Sync reference images separately
+          if (referenceImages && Array.isArray(referenceImages)) {
+            referenceImages.forEach((img: any) => {
+              const imgDocRef = doc(db, 'users', state.firebaseUser!.uid, 'brands', 'default', 'referenceImages', img.id);
+              setDoc(imgDocRef, img, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/brands/default/referenceImages/${img.id}`));
+            });
+          }
+
+          // Sync assets separately
+          if (assets && Array.isArray(assets)) {
+            assets.forEach((asset: any) => {
+              const assetDocRef = doc(db, 'users', state.firebaseUser!.uid, 'brands', 'default', 'assets', asset.id);
+              setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/brands/default/assets/${asset.id}`));
+            });
+          }
+
+          // Also sync basic info to user doc for quick access
+          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          
+          // We use updateDoc to explicitly delete the old large fields while updating metadata
+          updateDoc(userDocRef, { 
+            brandName: brandToSync.name || '',
+            industry: brandToSync.industry || '',
+            updatedAt: new Date().toISOString(),
+            brand: deleteField(), // Remove legacy large brand object
+            posts: deleteField(), // Remove legacy large posts array
+            mediaAssets: deleteField(), // Remove legacy large mediaAssets array
+            studioAssets: deleteField() // Remove legacy large studioAssets array
+          }).catch((e: any) => {
+            // If updateDoc fails (e.g. document doesn't exist yet or fields already deleted), 
+            // fallback to setDoc with merge for basic metadata
+            setDoc(userDocRef, { 
+              brandName: brandToSync.name || '',
+              industry: brandToSync.industry || '',
+              updatedAt: new Date().toISOString()
+            }, { merge: true }).catch((err: any) => handleFirestoreError(err, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          });
         }
       },
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
@@ -246,12 +292,47 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       setAiSettings: (aiSettings) => set({ aiSettings, credits: aiSettings?.creditBalance || 0 }),
       setIsLoadingAICredits: (isLoadingAICredits) => set({ isLoadingAICredits }),
       setWorkspaceId: (workspaceId) => set({ workspaceId }),
-      setWeeklyPlan: (posts) => set({ posts }),
-      addPost: (post) => set((state) => ({ posts: [...state.posts, post] })),
-      removePost: (id) => set((state) => ({ posts: state.posts.filter(p => p.id !== id) })),
-      updatePost: (id, updates) => set((state) => ({
-        posts: state.posts.map(p => p.id === id ? { ...p, ...updates } : p)
-      })),
+      setWeeklyPlan: (posts, skipSync = false) => {
+        set({ posts });
+        if (skipSync) return;
+        // Sync posts with Firebase
+        const state = get();
+        if (state.firebaseUser) {
+          posts.forEach(post => {
+            const postDocRef = doc(db, 'users', state.firebaseUser!.uid, 'posts', post.id);
+            setDoc(postDocRef, post, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/posts/${post.id}`));
+          });
+        }
+      },
+      addPost: (post, skipSync = false) => {
+        set((state) => ({ posts: [...state.posts, post] }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const postDocRef = doc(db, 'users', state.firebaseUser.uid, 'posts', post.id);
+          setDoc(postDocRef, post).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${state.firebaseUser?.uid}/posts/${post.id}`));
+        }
+      },
+      removePost: (id, skipSync = false) => {
+        set((state) => ({ posts: state.posts.filter(p => p.id !== id) }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const postDocRef = doc(db, 'users', state.firebaseUser.uid, 'posts', id);
+          deleteDoc(postDocRef).catch((e: any) => handleFirestoreError(e, OperationType.DELETE, `users/${state.firebaseUser?.uid}/posts/${id}`));
+        }
+      },
+      updatePost: (id, updates, skipSync = false) => {
+        set((state) => ({
+          posts: state.posts.map(p => p.id === id ? { ...p, ...updates } : p)
+        }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const postDocRef = doc(db, 'users', state.firebaseUser.uid, 'posts', id);
+          setDoc(postDocRef, updates, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/posts/${id}`));
+        }
+      },
       setActiveView: (activeView) => set({ activeView }),
       setAutopilotRunning: (isAutopilotRunning) => set({ isAutopilotRunning }),
       incrementVideoCount: () => set((state) => ({ videoCount: state.videoCount + 1 })),
@@ -320,21 +401,63 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
           brand: { ...brand, referenceSettings: { ...(brand.referenceSettings || { useInGeneration: true, strength: 'medium' }), ...settings } }
         };
       }),
-      addMediaAsset: (asset) => set((state) => ({
-        mediaAssets: [asset, ...state.mediaAssets]
-      })),
-      removeMediaAsset: (id) => set((state) => ({
-        mediaAssets: state.mediaAssets.filter(a => a.id !== id)
-      })),
-      updateMediaAsset: (id, updates) => set((state) => ({
-        mediaAssets: state.mediaAssets.map(a => a.id === id ? { ...a, ...updates } : a)
-      })),
-      addStudioAsset: (asset) => set((state) => ({
-        studioAssets: [asset, ...state.studioAssets]
-      })),
-      removeStudioAsset: (id) => set((state) => ({
-        studioAssets: state.studioAssets.filter(a => a.id !== id)
-      })),
+      addMediaAsset: (asset, skipSync = false) => {
+        set((state) => ({
+          mediaAssets: [asset, ...state.mediaAssets]
+        }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'mediaAssets', asset.id);
+          setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/mediaAssets/${asset.id}`));
+        }
+      },
+      removeMediaAsset: (id, skipSync = false) => {
+        set((state) => ({
+          mediaAssets: state.mediaAssets.filter(a => a.id !== id)
+        }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'mediaAssets', id);
+          deleteDoc(assetDocRef).catch((e: any) => handleFirestoreError(e, OperationType.DELETE, `users/${state.firebaseUser?.uid}/mediaAssets/${id}`));
+        }
+      },
+      updateMediaAsset: (id, updates, skipSync = false) => {
+        set((state) => ({
+          mediaAssets: state.mediaAssets.map(a => a.id === id ? { ...a, ...updates } : a)
+        }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'mediaAssets', id);
+          setDoc(assetDocRef, updates, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/mediaAssets/${id}`));
+        }
+      },
+      addStudioAsset: (asset, skipSync = false) => {
+        set((state) => ({
+          studioAssets: [asset, ...state.studioAssets]
+        }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'studioAssets', asset.id);
+          setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/studioAssets/${asset.id}`));
+        }
+      },
+      removeStudioAsset: (id, skipSync = false) => {
+        set((state) => ({
+          studioAssets: state.studioAssets.filter(a => a.id !== id)
+        }));
+        if (skipSync) return;
+        const state = get();
+        if (state.firebaseUser) {
+          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'studioAssets', id);
+          deleteDoc(assetDocRef).catch((e: any) => handleFirestoreError(e, OperationType.DELETE, `users/${state.firebaseUser?.uid}/studioAssets/${id}`));
+        }
+      },
+      setMediaAssets: (mediaAssets: MediaAsset[]) => set({ mediaAssets }),
+      setStudioAssets: (studioAssets: StudioGeneratedAsset[]) => set({ studioAssets }),
       syncAllPostsWithBrand: (buildFinalContent) => set((state) => ({
         posts: state.posts.map(post => {
           if (post.signatureEnabled) {

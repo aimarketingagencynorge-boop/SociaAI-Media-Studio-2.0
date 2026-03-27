@@ -52,9 +52,9 @@ export class GeminiService {
   }
 
   public buildFinalContent(baseContent: string, brand: BrandData): string {
-    if (!brand) return baseContent;
+    if (!brand || !baseContent) return baseContent || '';
     const signature = this.getSignature(brand);
-    const cleanContent = baseContent.split('\n\n---\n')[0];
+    const cleanContent = (baseContent || '').split('\n\n---\n')[0];
     return cleanContent + signature;
   }
 
@@ -224,7 +224,7 @@ export class GeminiService {
     } catch (e: any) {
       console.error("Image generation failed", e);
     }
-    return `https://loremflickr.com/800/800/${brand.industry.split(' ')[0] || 'business'}?random=${Math.random()}`;
+    return `https://loremflickr.com/800/800/${(brand.industry || '').split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
 
   async scanWebsite(url: string, targetLanguage: Language) {
@@ -543,7 +543,7 @@ export class GeminiService {
     } catch (e: any) {
       console.error("Studio image generation failed", e);
     }
-    return `https://loremflickr.com/1080/1080/${brand.industry.split(' ')[0] || 'business'}?random=${Math.random()}`;
+    return `https://loremflickr.com/1080/1080/${(brand.industry || '').split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
 
   async generateStudioVideo(

@@ -148,22 +148,36 @@ async function resolveAiAccess(workspaceId: string): Promise<{
   }
 
   const settings: AIAccessSettings = workspaceSnap.data() as AIAccessSettings;
-  
+  const masterKey = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+
   // Mode 1: User's own API key
   if (settings.activeSource === 'user_api_key') {
-    if (settings.userApiKeyStatus !== 'valid' || !settings.userApiKeyEncrypted) {
-      return { apiKey: "", source: "user_api_key", cost: 0, error: "User API key is not valid or missing", status: 400 };
+    if (settings.userApiKeyStatus === 'valid' && settings.userApiKeyEncrypted) {
+      // Decrypt the key
+      const decryptedKey = decrypt(settings.userApiKeyEncrypted);
+      if (decryptedKey) {
+        return { apiKey: decryptedKey, source: "user_api_key", cost: 0 };
+      }
     }
-    // Decrypt the key
-    const decryptedKey = decrypt(settings.userApiKeyEncrypted);
-    if (!decryptedKey) {
-      return { apiKey: "", source: "user_api_key", cost: 0, error: "Failed to decrypt API key", status: 500 };
+    
+    // Fallback to Master Key if user key is selected but invalid/missing
+    if (masterKey) {
+      if (settings.creditBalance <= 0) {
+        return { 
+          apiKey: "", 
+          source: "starter_credits", 
+          cost: 0, 
+          error: "resource-exhausted", 
+          status: 403 
+        };
+      }
+      return { apiKey: masterKey, source: "starter_credits", cost: 0 };
     }
-    return { apiKey: decryptedKey, source: "user_api_key", cost: 0 };
+
+    return { apiKey: "", source: "user_api_key", cost: 0, error: "User API key is not valid or missing", status: 400 };
   }
 
   // Mode 2: Platform Credits (Starter or Purchased)
-  const masterKey = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!masterKey) {
     return { apiKey: "", source: settings.activeSource, cost: 0, error: "AI service configuration error (Missing Master Key)", status: 500 };
   }
@@ -240,14 +254,29 @@ async function startServer() {
         await historyRef.set(transactionRecord);
         
         // Ensure user has workspaceId
+        // Also cleanup legacy large fields if they exist
         await userRef.set({ 
           uid: userId,
           email: email || "",
           workspaceId: workspaceId,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          brand: admin.firestore.FieldValue.delete(),
+          posts: admin.firestore.FieldValue.delete(),
+          mediaAssets: admin.firestore.FieldValue.delete(),
+          studioAssets: admin.firestore.FieldValue.delete()
         }, { merge: true });
 
         return res.json({ success: true, message: "Starter credits granted", credits: STARTER_AMOUNT, workspaceId });
+      }
+
+      // Migration/Fix: If activeSource is user_api_key but key is missing/invalid, reset to starter_credits
+      const data = workspaceSnap.data() as AIAccessSettings;
+      if (data.activeSource === 'user_api_key' && (data.userApiKeyStatus !== 'valid' || !data.userApiKeyEncrypted)) {
+        console.log(`[Auth Init] Resetting activeSource to starter_credits for user ${userId} (invalid/missing user key)`);
+        await workspaceRef.update({ 
+          activeSource: 'starter_credits',
+          updatedAt: new Date().toISOString()
+        });
       }
 
       res.json({ success: true, message: "User already initialized", workspaceId });
