@@ -5,19 +5,34 @@ import firebaseConfig from './firebase-applet-config.json';
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Use named database if provided, otherwise default
+export const db = firebaseConfig.firestoreDatabaseId 
+  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+  : getFirestore(app);
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export type { User };
 
-// Connection test
+// Connection test with more detailed logging
 async function testConnection() {
   try {
+    console.log(`Testing Firestore connection to database: ${firebaseConfig.firestoreDatabaseId || '(default)'}...`);
     await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. The client appears to be offline or the config is invalid.");
+    console.log("Firestore connection test successful (reached server).");
+  } catch (error: any) {
+    // If we get a permission-denied error, it actually means we REACHED the server
+    // but the rules didn't allow the read. This is still a "success" for connectivity.
+    if (error?.code === 'permission-denied') {
+      console.log("Firestore connection test: Reached server (Permission Denied as expected if rules are strict).");
+      return;
+    }
+
+    console.error("Firestore connection test failed:", error);
+    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('unavailable'))) {
+      console.error("CRITICAL: Firestore is unreachable. Please check project provisioning and database ID.");
     }
   }
 }

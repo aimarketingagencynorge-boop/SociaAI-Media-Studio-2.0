@@ -210,7 +210,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         const state = get();
         if (state.firebaseUser) {
           const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          updateDoc(userDocRef, { credits }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          setDoc(userDocRef, { credits }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
         }
       },
       addCredits: (amount) => set((state) => ({ credits: state.credits + amount })),
@@ -228,7 +228,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         const state = get();
         if (state.firebaseUser) {
           const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          updateDoc(userDocRef, { onboardingStep }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          setDoc(userDocRef, { onboardingStep }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
         }
       },
       updateBrand: (data) => {
@@ -240,7 +240,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         const state = get();
         if (state.firebaseUser) {
           const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          updateDoc(userDocRef, { brand: get().brand }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          setDoc(userDocRef, { brand: get().brand }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
         }
       },
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
@@ -251,7 +251,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         const state = get();
         if (state.firebaseUser) {
           const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          updateDoc(userDocRef, { geminiApiKey }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          setDoc(userDocRef, { geminiApiKey }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
         }
       },
       setWeeklyPlan: (posts) => set({ posts }),
