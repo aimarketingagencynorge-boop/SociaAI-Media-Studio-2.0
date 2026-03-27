@@ -70,8 +70,22 @@ const Onboarding: React.FC = () => {
     setLogs(prev => [...prev, { msg: `> [${type.toUpperCase()}]: ${msg}`, type }]);
   };
 
-  const [manualKey, setManualKey] = useState(useStore.getState().geminiApiKey || '');
+  const { workspaceId, aiSettings } = useStore();
+  const [manualKey, setManualKey] = useState('');
   const [showManualAuth, setShowManualAuth] = useState(!window.aistudio);
+
+  const handleUpdateAISettings = async (updates: any) => {
+    try {
+      const response = await fetch('/api/ai/settings/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, ...updates })
+      });
+      if (!response.ok) throw new Error("Failed to update AI settings");
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const handleOpenAuth = async () => {
     if (window.aistudio && !showManualAuth) {
@@ -87,7 +101,7 @@ const Onboarding: React.FC = () => {
         addLog("MANUAL_AUTH_REQUIRED: Please enter your Gemini API Key.", "warn");
         return;
       }
-      await useStore.getState().saveUserApiKey(manualKey);
+      await handleUpdateAISettings({ userApiKey: manualKey, activeSource: 'user_api_key' });
       setAuthRequired(false);
       addLog("Manual Neural Link established. Retrying scan operations...");
       handleScan(true);
@@ -100,9 +114,11 @@ const Onboarding: React.FC = () => {
     // Proactive check for API key selection
     // If force is true, we skip the check to mitigate race conditions after openSelectKey
     const hasAistudioKey = window.aistudio ? await window.aistudio.hasSelectedApiKey() : false;
-    const hasManualKey = !!useStore.getState().geminiApiKey;
+    const hasAiAccess = aiSettings?.activeSource === 'user_api_key' 
+      ? aiSettings.hasUserApiKey 
+      : (aiSettings?.creditBalance && aiSettings.creditBalance > 0);
 
-    if (!force && !hasAistudioKey && !hasManualKey) {
+    if (!force && !hasAistudioKey && !hasAiAccess) {
       addLog("AUTH_REQUIRED: No API key detected. Please select or enter one.", "warn");
       setAuthRequired(true);
       return;

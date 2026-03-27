@@ -5,22 +5,18 @@ service cloud.firestore {
     // Assumed Data Model
     // ===============================================================
     //
-    // Collection: users
-    // Document ID: {userId}
+    // Collection: workspaces
+    // Document ID: {workspaceId}
     // Fields:
-    //   - uid: string (required)
-    //   - email: string (required)
-    //   - credits: number
-    //   - language: string
-    //   - onboardingStep: number
-    //   - geminiApiKey: string
-    //   - workspaceId: string
-    //   - createdAt: timestamp
-    //   - updatedAt: timestamp
-    //
-    // Collection: users/{userId}/brands
-    // Fields:
-    //   - name, description, industry, etc.
+    //   - workspaceId: string (required)
+    //   - aiProvider: string (required)
+    //   - activeSource: string (required)
+    //   - starterCreditsGranted: boolean
+    //   - creditBalance: number
+    //   - hasUserApiKey: boolean
+    //   - userApiKeyStatus: string
+    //   - userApiKeyEncrypted: string
+    //   - updatedAt: string (ISO)
     //
     // ===============================================================
 
@@ -31,6 +27,11 @@ service cloud.firestore {
 
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isWorkspaceMember(workspaceId) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.workspaceId == workspaceId;
     }
 
     function isAdmin() {
@@ -47,7 +48,23 @@ service cloud.firestore {
              (!('geminiApiKey' in data) || (data.geminiApiKey is string && data.geminiApiKey.size() < 200));
     }
 
+    function isValidWorkspace(data) {
+      return data.keys().hasAll(['workspaceId', 'aiProvider', 'activeSource']) &&
+             data.workspaceId is string &&
+             data.aiProvider == 'gemini' &&
+             data.activeSource in ['starter_credits', 'purchased_credits', 'user_api_key'] &&
+             data.creditBalance is number &&
+             data.creditBalance >= 0;
+    }
+
     // Rules
+    match /workspaces/{workspaceId} {
+      allow read: if isWorkspaceMember(workspaceId) || isAdmin();
+      // Only server-side or admin can create/update sensitive fields
+      // But we allow read for members to sync settings
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && !('role' in request.resource.data);

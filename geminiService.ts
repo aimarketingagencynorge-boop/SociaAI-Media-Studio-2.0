@@ -130,10 +130,12 @@ export class GeminiService {
   }
 
   private async callGatekeeper(actionType: CreditActionType, prompt: string, model: string = 'gemini-3-flash-preview', config?: any): Promise<string> {
-    const userId = useStore.getState().userId;
+    const state = useStore.getState();
+    const userId = state.userId;
+    const workspaceId = state.workspaceId;
     if (!userId) throw new Error("User not authenticated");
     
-    return await callAI(actionType, { prompt, model, config }, userId);
+    return await callAI(actionType, { prompt, model, config }, userId, workspaceId);
   }
 
   public buildCampaignContext(post: Partial<SocialPost>, brand: BrandData): CampaignContext {
@@ -210,11 +212,13 @@ export class GeminiService {
         finalPrompt = `Professional cinematic photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. High resolution, no text.`;
       }
 
-      const userId = useStore.getState().userId;
+      const state = useStore.getState();
+      const userId = state.userId;
+      const workspaceId = state.workspaceId;
       const result = await callAI('generate_image', { 
         prompt: finalPrompt, 
         model: 'gemini-2.5-flash-image' 
-      }, userId);
+      }, userId, workspaceId);
 
       return result;
     } catch (e: any) {
@@ -327,12 +331,14 @@ export class GeminiService {
     try {
       const brandPrompt = `Enhance this image for ${brand.name}. Command: ${prompt}. Style: ${brand.voiceProfile}. High quality marketing visual. Return the enhanced image.`;
       
-      const userId = useStore.getState().userId;
+      const state = useStore.getState();
+      const userId = state.userId;
+      const workspaceId = state.workspaceId;
       const result = await callAI('generate_image', {
         prompt: brandPrompt,
         model: 'gemini-2.5-flash-image',
         image: base64Image
-      }, userId);
+      }, userId, workspaceId);
 
       return result;
     } catch (e: any) {
@@ -519,7 +525,9 @@ export class GeminiService {
         finalPrompt = await this.generateImagePromptFromPost(context);
       }
 
-      const userId = useStore.getState().userId;
+      const state = useStore.getState();
+      const userId = state.userId;
+      const workspaceId = state.workspaceId;
       const result = await callAI('generate_image', {
         prompt: finalPrompt,
         model: 'gemini-2.5-flash-image',
@@ -529,7 +537,7 @@ export class GeminiService {
             aspectRatio: platform === 'instagram' ? "1:1" : platform === 'tiktok' ? "9:16" : "16:9",
           }
         }
-      }, userId);
+      }, userId, workspaceId);
 
       return result;
     } catch (e: any) {
@@ -554,7 +562,9 @@ export class GeminiService {
         finalPrompt = await this.generateImagePromptFromPost(context);
       }
 
-      const userId = useStore.getState().userId;
+      const state = useStore.getState();
+      const userId = state.userId;
+      const workspaceId = state.workspaceId;
       const result = await callAI('generate_video', {
         prompt: finalPrompt,
         model: 'veo-3.1-fast-generate-preview',
@@ -564,7 +574,7 @@ export class GeminiService {
           resolution: '720p',
           aspectRatio: platform === 'tiktok' || platform === 'instagram' ? '9:16' : '16:9'
         }
-      }, userId);
+      }, userId, workspaceId);
 
       return result;
     } catch (e: any) {

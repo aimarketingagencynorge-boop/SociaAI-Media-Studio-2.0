@@ -10,7 +10,7 @@ import { signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const LandingPage: React.FC = () => {
-  const { language, setLanguage, setAuthenticated, setOnboardingStep, credits, brand, resetMission, setFirebaseUser, setGeminiApiKey, updateBrand } = useStore();
+  const { language, setLanguage, setAuthenticated, setOnboardingStep, credits, brand, resetMission, setFirebaseUser, updateBrand } = useStore();
   const t = translations[language];
   const [showContinueDialog, setShowContinueDialog] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -45,7 +45,7 @@ const LandingPage: React.FC = () => {
       } else {
         // Load existing user data into store
         const data = userDoc.data();
-        if (data.geminiApiKey) setGeminiApiKey(data.geminiApiKey);
+        // AI settings are now synced via workspaceId in AuthContext
         if (data.brand) updateBrand(data.brand);
         if (data.language) setLanguage(data.language);
         if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep);

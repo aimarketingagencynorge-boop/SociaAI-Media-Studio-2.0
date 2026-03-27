@@ -10,31 +10,30 @@ import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestor
 import { CreditTransaction } from '../types';
 
 const Billing: React.FC = () => {
-  const { language, addCredits, aiSettings, setActiveAISource, saveUserApiKey, firebaseUser } = useStore();
+  const { language, aiSettings, firebaseUser, workspaceId } = useStore();
   const t = translations[language];
   const [apiKey, setApiKey] = useState('');
   const [isSavingKey, setIsSavingKey] = useState(false);
   const [history, setHistory] = useState<CreditTransaction[]>([]);
 
-  useEffect(() => {
-    if (firebaseUser) {
-      const historyRef = collection(db, 'users', firebaseUser.uid, 'credit_history');
-      const q = query(historyRef, orderBy('createdAt', 'desc'), limit(10));
-      
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CreditTransaction));
-        setHistory(docs);
+  const handleUpdateAISettings = async (updates: any) => {
+    try {
+      const response = await fetch('/api/ai/settings/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, ...updates })
       });
-
-      return () => unsubscribe();
+      if (!response.ok) throw new Error("Failed to update AI settings");
+    } catch (err) {
+      console.error(err);
     }
-  }, [firebaseUser]);
+  };
 
   const handleSaveKey = async () => {
     if (!apiKey.trim()) return;
     setIsSavingKey(true);
     try {
-      await saveUserApiKey(apiKey);
+      await handleUpdateAISettings({ userApiKey: apiKey, activeSource: 'user_api_key' });
       setApiKey('');
       alert("Klucz API został zapisany i aktywowany!");
     } catch (error) {
@@ -54,7 +53,7 @@ const Billing: React.FC = () => {
   const handleBuy = (amount: number) => {
     // Stripe Logic
     console.log("Stripe Key: pk_live_51QYtS9GCTUVg4lvlC9pKydFlkzBGTFVruh3bvNNz4RwW3EmyA3Pjiafd17pXJ5zWwI2bx4PlCR3ZYD95Z5KTrIqm00Z8bdqdl1");
-    addCredits(amount);
+    // In a real app, this would redirect to Stripe or call a backend endpoint to add credits
     alert(`Autoryzacja udana! Portfel zasilony o ${amount} ForceCredits.`);
   };
 
@@ -71,16 +70,16 @@ const Billing: React.FC = () => {
           
           <div className="space-y-4">
             <button 
-              onClick={() => setActiveAISource('credits')}
+              onClick={() => handleUpdateAISettings({ activeSource: 'starter_credits' })}
               className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between group ${
-                aiSettings?.activeSource === 'credits' 
+                aiSettings?.activeSource !== 'user_api_key' 
                 ? 'bg-[#8C4DFF]/20 border-[#8C4DFF] shadow-[0_0_15px_rgba(140,77,255,0.2)]' 
                 : 'bg-white/5 border-white/5 hover:bg-white/10'
               }`}
             >
               <div className="flex items-center gap-4">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                  aiSettings?.activeSource === 'credits' ? 'bg-[#8C4DFF] text-white' : 'bg-white/5 text-white/40'
+                  aiSettings?.activeSource !== 'user_api_key' ? 'bg-[#8C4DFF] text-white' : 'bg-white/5 text-white/40'
                 }`}>
                   <Zap size={20} />
                 </div>
@@ -89,12 +88,12 @@ const Billing: React.FC = () => {
                   <p className="text-[9px] font-mono text-white/40 uppercase">Use your {aiSettings?.creditBalance || 0} CR balance</p>
                 </div>
               </div>
-              {aiSettings?.activeSource === 'credits' && <CheckCircle2 size={16} className="text-[#8C4DFF]" />}
+              {aiSettings?.activeSource !== 'user_api_key' && <CheckCircle2 size={16} className="text-[#8C4DFF]" />}
             </button>
 
             <button 
               onClick={() => {
-                if (aiSettings?.hasUserApiKey) setActiveAISource('user_api_key');
+                if (aiSettings?.hasUserApiKey) handleUpdateAISettings({ activeSource: 'user_api_key' });
                 else alert("Najpierw dodaj swój klucz API poniżej.");
               }}
               className={`w-full p-4 rounded-2xl border transition-all flex items-center justify-between group ${

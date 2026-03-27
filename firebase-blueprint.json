@@ -44,12 +44,33 @@
         "status": { "type": "string", "enum": ["draft", "scheduled", "sent"] },
         "createdAt": { "type": "string", "format": "date-time" }
       }
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Workspace-level settings and AI access",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string" },
+        "aiProvider": { "type": "string", "enum": ["gemini"] },
+        "activeSource": { "type": "string", "enum": ["starter_credits", "purchased_credits", "user_api_key"] },
+        "starterCreditsGranted": { "type": "boolean" },
+        "creditBalance": { "type": "number" },
+        "hasUserApiKey": { "type": "boolean" },
+        "userApiKeyStatus": { "type": "string", "enum": ["missing", "saved", "valid", "invalid"] },
+        "userApiKeyEncrypted": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "aiProvider", "activeSource"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "User",
       "description": "User documents"
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": "Workspace",
+      "description": "Workspace-level settings and AI access"
     },
     "/users/{userId}/brands/{brandId}": {
       "schema": "Brand",

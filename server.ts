@@ -2,22 +2,53 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { GoogleGenAI, Modality } from "@google/genai";
-import { AI_COSTS, CreditTransaction, AIAccessSettings, AISource, CreditActionType } from "./types.ts";
+import crypto from "crypto";
+import { AI_COSTS } from "./types.ts";
+import type { CreditTransaction, AIAccessSettings, AISource, CreditActionType } from "./types.ts";
+
+// Encryption Helpers
+const ENCRYPTION_KEY = process.env.AI_ENCRYPTION_KEY || 'a_very_secret_32_byte_key_for_ai_keys_123';
+const IV_LENGTH = 16;
+
+function encrypt(text: string) {
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY.padEnd(32).slice(0, 32)), iv);
+  let encrypted = cipher.update(text);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  return iv.toString('hex') + ':' + encrypted.toString('hex');
+}
+
+function decrypt(text: string) {
+  try {
+    const textParts = text.split(':');
+    const iv = Buffer.from(textParts.shift()!, 'hex');
+    const encryptedText = Buffer.from(textParts.join(':'), 'hex');
+    const decipher = crypto.createDecipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY.padEnd(32).slice(0, 32)), iv);
+    let decrypted = decipher.update(encryptedText);
+    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    return decrypted.toString();
+  } catch (e) {
+    console.error("Decryption failed:", e);
+    return "";
+  }
+}
 
 // Load Firebase configuration
-const firebaseConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
+const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
+const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Initialize Firebase Admin
-const projectId = firebaseConfig.projectId;
+const projectId = firebaseConfig.projectId || process.env.GOOGLE_CLOUD_PROJECT;
+const configDbId = firebaseConfig.firestoreDatabaseId;
+
 console.log(`[Server] Initializing Firebase Admin with Project ID: ${projectId}`);
-console.log(`[Server] Configured Database ID: ${(firebaseConfig as any).firestoreDatabaseId}`);
+console.log(`[Server] Configured Database ID: ${configDbId}`);
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -25,56 +56,80 @@ if (!admin.apps.length) {
   });
 }
 
-// Initialize Firestore with fallback logic
-let firestoreInstance: admin.firestore.Firestore;
-const configDbId = (firebaseConfig as any).firestoreDatabaseId;
-let useDefaultFallback = false;
+// Canonical Firestore instance
+const db = (configDbId && configDbId !== "(default)") ? getFirestore(configDbId) : getFirestore();
 
-function getDb(forceDefault = false) {
-  if (useDefaultFallback || forceDefault) return getFirestore();
+// Initial connection verification
+async function verifyFirestore() {
+  console.log("[Server] Verifying Firestore connection...");
   try {
-    if (configDbId && configDbId !== "(default)") {
-      return getFirestore(configDbId);
-    }
-  } catch (e) {
-    console.warn("[Server] Failed to get named Firestore instance, falling back to default");
-    useDefaultFallback = true;
-  }
-  return getFirestore();
-}
-
-// Initial check
-const initialDb = getDb();
-if (configDbId && configDbId !== "(default)") {
-  initialDb.collection('test').doc('connection').get().then(() => {
-    console.log(`[Server] Firestore connection verified for database: ${configDbId}`);
-  }).catch((error: any) => {
-    const isNotFoundError = error.code === 5 || (error.message && error.message.includes('NOT_FOUND'));
-    const isPermissionError = error.code === 7 || (error.message && error.message.includes('PERMISSION_DENIED'));
-    
-    if (isNotFoundError || isPermissionError) {
-      console.warn(`[Server] ${isNotFoundError ? 'NOT_FOUND' : 'PERMISSION_DENIED'} on database ${configDbId}, switching to default database for all future requests`);
-      useDefaultFallback = true;
+    // Simple read to verify connection
+    await db.collection('test').doc('connection').get();
+    console.log(`[Server] Firestore verified: ${configDbId || '(default)'}`);
+  } catch (error: any) {
+    if (error.code === 5 || error.message?.includes('NOT_FOUND')) {
+      console.warn(`[Server] Firestore database '${configDbId}' NOT FOUND. Ensure it exists in the Firebase console.`);
+    } else if (error.code === 7 || error.message?.includes('PERMISSION_DENIED')) {
+      console.log("[Server] Firestore reached (Permission Denied as expected with strict rules).");
     } else {
-      console.error(`[Server] Firestore connection test failed for ${configDbId}:`, error.message);
+      console.error("[Server] Firestore verification failed:", error.message);
     }
-  });
+  }
 }
 
-// Proxy-like access to db
-const db = {
-  collection: (path: string) => getDb().collection(path),
-  doc: (path: string) => getDb().doc(path),
-  runTransaction: (updateFunction: (transaction: admin.firestore.Transaction) => Promise<any>) => getDb().runTransaction(updateFunction),
-  batch: () => getDb().batch(),
-  getAll: (...args: any[]) => (getDb() as any).getAll(...args),
-  recursiveDelete: (ref: any) => (getDb() as any).recursiveDelete(ref),
-  bulkWriter: () => (getDb() as any).bulkWriter(),
-  terminate: () => getDb().terminate(),
-  listCollections: () => getDb().listCollections(),
-} as unknown as admin.firestore.Firestore;
+// Unified AI Access Resolver
+async function resolveAiAccess(workspaceId: string): Promise<{ 
+  apiKey: string; 
+  source: AISource; 
+  cost: number;
+  error?: string;
+  status?: number;
+}> {
+  const workspaceRef = db.collection("workspaces").doc(workspaceId);
+  const workspaceSnap = await workspaceRef.get();
+
+  if (!workspaceSnap.exists) {
+    return { apiKey: "", source: "starter_credits", cost: 0, error: "Workspace not found", status: 404 };
+  }
+
+  const settings: AIAccessSettings = workspaceSnap.data() as AIAccessSettings;
+  
+  // Mode 1: User's own API key
+  if (settings.activeSource === 'user_api_key') {
+    if (settings.userApiKeyStatus !== 'valid' || !settings.userApiKeyEncrypted) {
+      return { apiKey: "", source: "user_api_key", cost: 0, error: "User API key is not valid or missing", status: 400 };
+    }
+    // Decrypt the key
+    const decryptedKey = decrypt(settings.userApiKeyEncrypted);
+    if (!decryptedKey) {
+      return { apiKey: "", source: "user_api_key", cost: 0, error: "Failed to decrypt API key", status: 500 };
+    }
+    return { apiKey: decryptedKey, source: "user_api_key", cost: 0 };
+  }
+
+  // Mode 2: Platform Credits (Starter or Purchased)
+  const masterKey = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY;
+  if (!masterKey) {
+    return { apiKey: "", source: settings.activeSource, cost: 0, error: "AI service configuration error (Missing Master Key)", status: 500 };
+  }
+
+  if (settings.creditBalance <= 0) {
+    return { 
+      apiKey: "", 
+      source: settings.activeSource, 
+      cost: 0, 
+      error: "resource-exhausted", 
+      status: 403 
+    };
+  }
+
+  return { apiKey: masterKey, source: settings.activeSource, cost: 0 };
+}
 
 async function startServer() {
+  // Ensure Firestore is ready before starting server
+  await verifyFirestore();
+
   const app = express();
   const PORT = 3000;
 
@@ -86,47 +141,32 @@ async function startServer() {
       const { userId, email } = req.body;
       if (!userId) return res.status(400).json({ error: "Missing userId" });
 
+      // In this app, workspaceId is currently same as userId for simplicity
+      const workspaceId = userId; 
       const userRef = db.collection("users").doc(userId);
-      let userSnap;
-      try {
-        userSnap = await userRef.get();
-      } catch (dbError: any) {
-        const isNotFoundError = dbError.code === 5 || (dbError.message && dbError.message.includes('NOT_FOUND'));
-        const isPermissionError = dbError.code === 7 || (dbError.message && dbError.message.includes('PERMISSION_DENIED'));
-        
-        if (isNotFoundError || isPermissionError) {
-          console.warn(`[Auth] Retrying with default database due to ${isNotFoundError ? 'NOT_FOUND' : 'PERMISSION_DENIED'}`);
-          userSnap = await getFirestore().collection("users").doc(userId).get();
-          useDefaultFallback = true; // Switch globally
-        } else {
-          console.error(`[Auth] Firestore read error for user ${userId}:`, dbError);
-          return res.status(500).json({ 
-            error: "Database access error", 
-            message: dbError.message,
-            code: dbError.code
-          });
-        }
-      }
-
+      const workspaceRef = db.collection("workspaces").doc(workspaceId);
+      
+      const userSnap = await userRef.get();
       const STARTER_AMOUNT = 500;
+      const workspaceSnap = await workspaceRef.get();
 
-      if (!userSnap.exists || !userSnap.data()?.aiSettings?.starterCreditsGranted) {
+      // Initialize Workspace if not exists
+      if (!workspaceSnap.exists || !workspaceSnap.data()?.starterCreditsGranted) {
         const initialSettings: AIAccessSettings = {
-          creditBalance: STARTER_AMOUNT,
+          workspaceId,
+          aiProvider: 'gemini',
+          activeSource: 'starter_credits',
           starterCreditsGranted: true,
-          activeSource: 'credits',
+          creditBalance: STARTER_AMOUNT,
           hasUserApiKey: false,
+          userApiKeyStatus: 'missing',
           updatedAt: new Date().toISOString()
         };
 
-        await userRef.set({ 
-          uid: userId,
-          email: email || "",
-          aiSettings: initialSettings 
-        }, { merge: true });
+        await workspaceRef.set(initialSettings);
 
         // Record transaction
-        const historyRef = userRef.collection("credit_history").doc();
+        const historyRef = workspaceRef.collection("credit_history").doc();
         const transactionRecord: CreditTransaction = {
           userId,
           amount: STARTER_AMOUNT,
@@ -136,92 +176,113 @@ async function startServer() {
           createdAt: new Date().toISOString()
         };
         await historyRef.set(transactionRecord);
+        
+        // Ensure user has workspaceId
+        await userRef.set({ 
+          uid: userId,
+          email: email || "",
+          workspaceId: workspaceId,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
 
-        return res.json({ success: true, message: "Starter credits granted", credits: STARTER_AMOUNT });
+        return res.json({ success: true, message: "Starter credits granted", credits: STARTER_AMOUNT, workspaceId });
       }
 
-      res.json({ success: true, message: "User already initialized" });
+      res.json({ success: true, message: "User already initialized", workspaceId });
     } catch (error: any) {
       console.error("Auth Init Error:", error);
       res.status(500).json({ error: "Failed to initialize user", details: error.message });
     }
   });
 
+  // API Key Management Endpoints
+  app.post("/api/ai/settings/update", async (req, res) => {
+    try {
+      const { userId, workspaceId, geminiApiKey, activeSource } = req.body;
+      if (!workspaceId) return res.status(400).json({ error: "Missing workspaceId" });
+
+      const workspaceRef = db.collection("workspaces").doc(workspaceId);
+      const updateData: any = {
+        updatedAt: new Date().toISOString()
+      };
+
+      if (geminiApiKey !== undefined) {
+        if (geminiApiKey === "") {
+          updateData.hasUserApiKey = false;
+          updateData.userApiKeyStatus = 'missing';
+          updateData.userApiKeyEncrypted = admin.firestore.FieldValue.delete();
+          if (activeSource === 'user_api_key') {
+            updateData.activeSource = 'starter_credits';
+          }
+        } else {
+          // Validate key before saving
+          try {
+            const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+            const model = ai.models.get({ model: "gemini-3-flash-preview" });
+            await model; // Simple check
+            
+            updateData.hasUserApiKey = true;
+            updateData.userApiKeyStatus = 'valid';
+            updateData.userApiKeyEncrypted = encrypt(geminiApiKey);
+          } catch (err: any) {
+            return res.status(400).json({ error: "Invalid Gemini API key", details: err.message });
+          }
+        }
+      }
+
+      if (activeSource) {
+        updateData.activeSource = activeSource;
+      }
+
+      await workspaceRef.update(updateData);
+      const freshSnap = await workspaceRef.get();
+      res.json({ success: true, settings: freshSnap.data() });
+    } catch (error: any) {
+      console.error("Update AI Settings Error:", error);
+      res.status(500).json({ error: "Failed to update AI settings", details: error.message });
+    }
+  });
+
+  app.post("/api/ai/settings/validate", async (req, res) => {
+    try {
+      const { geminiApiKey } = req.body;
+      if (!geminiApiKey) return res.status(400).json({ error: "Missing API key" });
+
+      const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+      const model = ai.models.get({ model: "gemini-3-flash-preview" });
+      await model;
+      
+      res.json({ success: true, message: "API key is valid" });
+    } catch (error: any) {
+      res.status(400).json({ success: false, error: "Invalid Gemini API key", details: error.message });
+    }
+  });
+
   // API Gatekeeper Endpoint
   app.post("/api/ai/execute", async (req, res) => {
     try {
-      const { actionType, payload, userId } = req.body;
-      console.log(`[Gatekeeper] Request: actionType=${actionType}, userId=${userId}`);
-
-      if (!userId) {
-        return res.status(401).json({ error: "Unauthorized: Missing User ID" });
-      }
-
-      if (!AI_COSTS[actionType as CreditActionType] && actionType !== 'initial_grant') {
-        return res.status(400).json({ error: "Invalid AI action type" });
-      }
-
-      // Fetch user data and AI settings
-      console.log(`[Gatekeeper] Fetching user doc: users/${userId}`);
-      const userRef = db.collection("users").doc(userId);
-      let userSnap;
-      try {
-        userSnap = await userRef.get();
-        console.log(`[Gatekeeper] User doc fetched. Exists: ${userSnap.exists}`);
-      } catch (dbError: any) {
-        const isNotFoundError = dbError.code === 5 || (dbError.message && dbError.message.includes('NOT_FOUND'));
-        const isPermissionError = dbError.code === 7 || (dbError.message && dbError.message.includes('PERMISSION_DENIED'));
-        
-        if (isNotFoundError || isPermissionError) {
-          console.warn(`[Gatekeeper] Retrying with default database due to ${isNotFoundError ? 'NOT_FOUND' : 'PERMISSION_DENIED'}`);
-          userSnap = await getFirestore().collection("users").doc(userId).get();
-          useDefaultFallback = true; // Switch globally
-        } else {
-          console.error("[Gatekeeper] Firestore Read Error:", dbError);
-          return res.status(500).json({ 
-            error: "Database access error", 
-            message: dbError.message,
-            code: dbError.code,
-            details: dbError.details || ""
-          });
-        }
-      }
+      const { actionType, payload, userId, workspaceId } = req.body;
+      const targetWorkspaceId = workspaceId || userId; // Fallback for legacy
       
-      if (!userSnap.exists) {
-        return res.status(404).json({ error: "User not found" });
-      }
+      console.log(`[Gatekeeper] Request: actionType=${actionType}, userId=${userId}, workspaceId=${targetWorkspaceId}`);
 
-      const userData = userSnap.data();
-      const settings: AIAccessSettings = userData?.aiSettings;
-
-      if (!settings) {
-        return res.status(400).json({ error: "AI settings not configured for this user" });
+      if (!userId || !targetWorkspaceId) {
+        return res.status(401).json({ error: "Unauthorized: Missing User or Workspace ID" });
       }
 
       const cost = AI_COSTS[actionType as CreditActionType] || 0;
-      let apiKeyToUse: string | undefined;
-      let shouldUseCredits = false;
-
-      // Decision Logic
-      if (settings.activeSource === 'user_api_key') {
-        // Mode 1: User's own API key
-        // Note: In a real app, this should be encrypted in Firestore and decrypted here
-        apiKeyToUse = userData?.geminiApiKey; 
-        if (!apiKeyToUse) {
-          return res.status(400).json({ error: "User API key selected but not provided" });
-        }
-      } else {
-        // Mode 2: Platform Credits
-        if (settings.creditBalance < cost) {
-          return res.status(403).json({ error: "resource-exhausted", message: "Insufficient credits. Please top up or use your own API key." });
-        }
-        apiKeyToUse = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY;
-        shouldUseCredits = true;
+      
+      // Resolve AI Access
+      const access = await resolveAiAccess(targetWorkspaceId);
+      if (access.error) {
+        return res.status(access.status || 400).json({ 
+          error: access.error, 
+          message: access.error === "resource-exhausted" ? "Insufficient credits. Please top up or use your own API key." : access.error 
+        });
       }
 
-      if (!apiKeyToUse) {
-        return res.status(500).json({ error: "AI service configuration error (Missing API Key)" });
-      }
+      const apiKeyToUse = access.apiKey;
+      const shouldUseCredits = access.source !== 'user_api_key';
 
       // Execute AI Action
       const ai = new GoogleGenAI({ apiKey: apiKeyToUse });
@@ -302,20 +363,20 @@ async function startServer() {
 
       // If success and credit mode -> Deduct credits in a transaction
       if (shouldUseCredits && cost > 0) {
-        await db.runTransaction(async (transaction) => {
-          const freshUserSnap = await transaction.get(userRef);
-          const freshData = freshUserSnap.data();
-          const freshSettings: AIAccessSettings = freshData?.aiSettings;
+        const workspaceRef = db.collection("workspaces").doc(targetWorkspaceId);
+        await db.runTransaction(async (transaction: any) => {
+          const freshSnap = await transaction.get(workspaceRef);
+          const freshData = freshSnap.data() as AIAccessSettings;
           
-          const newBalance = (freshSettings?.creditBalance || 0) - cost;
+          const newBalance = (freshData?.creditBalance || 0) - cost;
 
-          transaction.update(userRef, {
-            "aiSettings.creditBalance": newBalance,
-            "aiSettings.updatedAt": new Date().toISOString()
+          transaction.update(workspaceRef, {
+            "creditBalance": newBalance,
+            "updatedAt": new Date().toISOString()
           });
 
           // Record transaction history
-          const historyRef = userRef.collection("credit_history").doc();
+          const historyRef = workspaceRef.collection("credit_history").doc();
           const transactionRecord: CreditTransaction = {
             userId,
             amount: -cost,
@@ -331,8 +392,7 @@ async function startServer() {
       res.json({ 
         success: true, 
         result: aiResult, 
-        creditsUsed: shouldUseCredits ? cost : 0,
-        newBalance: shouldUseCredits ? settings.creditBalance - cost : settings.creditBalance
+        creditsUsed: shouldUseCredits ? cost : 0
       });
 
     } catch (error: any) {
@@ -353,6 +413,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

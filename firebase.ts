@@ -6,53 +6,44 @@ import firebaseConfig from './firebase-applet-config.json';
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with fallback logic
-let dbInstance: any;
-try {
-  const dbId = (firebaseConfig as any).firestoreDatabaseId;
-  if (dbId && dbId !== "(default)") {
-    dbInstance = getFirestore(app, dbId);
-  } else {
-    dbInstance = getFirestore(app);
-  }
-} catch (e) {
-  console.warn("Failed to initialize Firestore with config ID, falling back to default:", e);
-  dbInstance = getFirestore(app);
-}
-
-export const db = dbInstance;
+// Initialize Firestore with a single canonical setup
+const dbId = (firebaseConfig as any).firestoreDatabaseId;
+export const db = (dbId && dbId !== "(default)") ? getFirestore(app, dbId) : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export type { User };
 
-// Connection test with more detailed logging and automatic fallback
+// Connection test with diagnostic logging
 async function testConnection() {
-  const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+  const currentDbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+  const projectId = firebaseConfig.projectId;
+  
+  console.log(`[Firebase Init] Project: ${projectId}`);
+  console.log(`[Firebase Init] Firestore Database: ${currentDbId}`);
+  
   try {
-    console.log(`Testing Firestore connection to database: ${dbId}...`);
+    // Attempt a light read to verify connectivity
     await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log("Firestore connection test successful (reached server).");
+    console.log("[Firebase Init] Firestore connection test successful.");
   } catch (error: any) {
-    // If we get a NOT_FOUND error on a named database, we should probably be using the default one
-    if (dbId !== '(default)' && (error?.code === 'not-found' || error?.message?.includes('not-found'))) {
-      console.warn("Named database not found, application may need to use (default) database.");
-    }
-
-    // If we get a permission-denied error, it actually means we REACHED the server
-    // but the rules didn't allow the read. This is still a "success" for connectivity.
-    if (error?.code === 'permission-denied') {
-      console.log("Firestore connection test: Reached server (Permission Denied as expected if rules are strict).");
-      return;
-    }
-
-    console.error("Firestore connection test failed:", error);
-    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('unavailable'))) {
-      console.error("CRITICAL: Firestore is unreachable. This often means Firestore is not enabled in the Firebase project or the project ID is incorrect.");
+    // Handle specific error cases without crashing the app
+    if (error?.code === 'not-found' || error?.message?.includes('not-found')) {
+      console.warn(`[Firebase Init] Firestore database '${currentDbId}' NOT FOUND. Ensure it exists in the Firebase console.`);
+    } else if (error?.code === 'permission-denied') {
+      console.log("[Firebase Init] Firestore reached (Permission Denied as expected with strict rules).");
+    } else if (error?.message?.includes('the client is offline') || error?.message?.includes('unavailable')) {
+      console.error("[Firebase Init] Firestore is unreachable. Check network or project configuration.");
+    } else {
+      console.error("[Firebase Init] Firestore connection test error:", error.message || error);
     }
   }
 }
-testConnection();
+
+// Start connection test asynchronously
+testConnection().then(() => {
+  console.log("[Firebase Init] Auth initialization state: ", auth.currentUser ? "Logged In" : "Not Logged In");
+});
 
 export enum OperationType {
   CREATE = 'create',
@@ -82,7 +73,7 @@ export interface FirestoreErrorInfo {
   }
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null, shouldThrow: boolean = true) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -101,6 +92,11 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     operationType,
     path
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  
+  // Log the error with context
+  console.error(`[Firestore Error] ${operationType.toUpperCase()} at ${path || 'unknown'}:`, errInfo.error);
+  
+  if (shouldThrow) {
+    throw new Error(JSON.stringify(errInfo));
+  }
 }

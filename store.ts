@@ -10,18 +10,13 @@ export type AppView = 'dashboard' | 'planner' | 'ai-studio' | 'media-lab' | 'ana
 
 interface StoreActions {
   setLanguage: (lang: Language) => void;
-  setCredits: (amount: number) => void;
-  deductCredits: (amount: number) => boolean;
-  addCredits: (amount: number) => void;
   setOnboardingStep: (step: number) => void;
   updateBrand: (data: Partial<BrandData>) => void;
   setAuthenticated: (status: boolean) => void;
   setFirebaseUser: (user: User | null) => void;
-  setGeminiApiKey: (key: string) => void;
   setAiSettings: (settings: AIAccessSettings | null) => void;
   setIsLoadingAICredits: (loading: boolean) => void;
-  setActiveAISource: (source: AISource) => Promise<void>;
-  saveUserApiKey: (key: string) => Promise<void>;
+  setWorkspaceId: (id: string) => void;
   setWeeklyPlan: (posts: SocialPost[]) => void;
   addPost: (post: SocialPost) => void;
   removePost: (id: string) => void;
@@ -178,15 +173,14 @@ const indexedDBStorage: StateStorage = {
   },
 };
 
-export const useStore = create<UserState & StoreActions & { activeView: AppView; firebaseUser: User | null; geminiApiKey: string }>()(
+export const useStore = create<UserState & StoreActions & { activeView: AppView; firebaseUser: User | null }>()(
   persist(
     (set, get) => ({
-      credits: 500,
+      credits: 0,
       language: 'PL',
       onboardingStep: 0,
       isAuthenticated: false,
       firebaseUser: null,
-      geminiApiKey: '',
       aiSettings: null,
       isLoadingAICredits: false,
       activeView: 'dashboard',
@@ -194,8 +188,8 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       isHyperspaceActive: false,
       isAutopilotRunning: false,
       editingPost: null,
-      userId: 'user_9921',
-      workspaceId: 'ws_beta_1',
+      userId: '',
+      workspaceId: '',
       integrations: [],
       webhookUrl: 'https://hooks.zapier.com/hooks/catch/21562148/uq3g9os/',
       socialLinks: {
@@ -210,24 +204,6 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       studioAssets: [],
 
       setLanguage: (language) => set({ language }),
-      setCredits: (credits) => {
-        set({ credits });
-        // Sync with Firebase if authenticated
-        const state = get();
-        if (state.firebaseUser) {
-          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          setDoc(userDocRef, { credits }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
-        }
-      },
-      addCredits: (amount) => set((state) => ({ credits: state.credits + amount })),
-      deductCredits: (amount) => {
-        const current = get().credits;
-        if (current >= amount) {
-          set({ credits: current - amount });
-          return true;
-        }
-        return false;
-      },
       setOnboardingStep: (onboardingStep) => {
         set({ onboardingStep });
         // Sync with Firebase if authenticated
@@ -251,34 +227,9 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       },
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
       setFirebaseUser: (firebaseUser) => set({ firebaseUser }),
-      setAiSettings: (aiSettings) => set({ aiSettings }),
+      setAiSettings: (aiSettings) => set({ aiSettings, credits: aiSettings?.creditBalance || 0 }),
       setIsLoadingAICredits: (isLoadingAICredits) => set({ isLoadingAICredits }),
-      setActiveAISource: async (source) => {
-        const state = get();
-        if (state.firebaseUser) {
-          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          await setDoc(userDocRef, { aiSettings: { ...state.aiSettings, activeSource: source } }, { merge: true });
-        }
-      },
-      saveUserApiKey: async (key) => {
-        const state = get();
-        if (state.firebaseUser) {
-          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          await setDoc(userDocRef, { 
-            geminiApiKey: key, 
-            aiSettings: { ...state.aiSettings, hasUserApiKey: true, activeSource: 'user_api_key' } 
-          }, { merge: true });
-        }
-      },
-      setGeminiApiKey: (geminiApiKey) => {
-        set({ geminiApiKey });
-        // Sync with Firebase if authenticated
-        const state = get();
-        if (state.firebaseUser) {
-          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          setDoc(userDocRef, { geminiApiKey }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
-        }
-      },
+      setWorkspaceId: (workspaceId) => set({ workspaceId }),
       setWeeklyPlan: (posts) => set({ posts }),
       addPost: (post) => set((state) => ({ posts: [...state.posts, post] })),
       removePost: (id) => set((state) => ({ posts: state.posts.filter(p => p.id !== id) })),
@@ -457,8 +408,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         integrations: state.integrations,
         webhookUrl: state.webhookUrl,
         userId: state.userId,
-        workspaceId: state.workspaceId,
-        geminiApiKey: state.geminiApiKey
+        workspaceId: state.workspaceId
       }),
     }
   )

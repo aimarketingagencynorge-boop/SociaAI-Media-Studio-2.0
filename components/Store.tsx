@@ -7,7 +7,7 @@ import { translations } from '../i18n';
 import NeonButton from './NeonButton';
 
 const Store: React.FC = () => {
-  const { language, addCredits } = useStore();
+  const { language } = useStore();
   const t = translations[language];
 
   const packs = [
@@ -20,7 +20,7 @@ const Store: React.FC = () => {
     // Stripe Mock logic as requested
     console.log(`Initializing Stripe Checkout for ${amount} FC...`);
     // In a real app we would call Stripe here. For now, let's just fuel up!
-    addCredits(amount);
+    // addCredits(amount); // Removed: backend handles credits
     alert(`Zasilanie zakończone! +${amount} ForceCredits dodane do Twojego portfela.`);
   };
 

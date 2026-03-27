@@ -7,12 +7,12 @@ export interface AIRequestPayload {
     config?: any;
 }
 
-export const callAI = async (actionType: CreditActionType, payload: AIRequestPayload, userId: string) => {
+export const callAI = async (actionType: CreditActionType, payload: AIRequestPayload, userId: string, workspaceId: string) => {
     try {
         const response = await fetch('/api/ai/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ actionType, payload, userId })
+            body: JSON.stringify({ actionType, payload, userId, workspaceId })
         });
 
         const result = await response.json();

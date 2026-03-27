@@ -154,13 +154,19 @@ export interface StudioGeneratedAsset {
   createdAt: string;
 }
 
-export type AISource = 'credits' | 'user_api_key';
+export type AISource = 'starter_credits' | 'purchased_credits' | 'user_api_key';
+
+export type UserApiKeyStatus = 'missing' | 'saved' | 'valid' | 'invalid';
 
 export interface AIAccessSettings {
-  creditBalance: number;
-  starterCreditsGranted: boolean;
+  workspaceId: string;
+  aiProvider: 'gemini';
   activeSource: AISource;
+  starterCreditsGranted: boolean;
+  creditBalance: number;
   hasUserApiKey: boolean;
+  userApiKeyStatus: UserApiKeyStatus;
+  userApiKeyEncrypted?: string;
   updatedAt: string; // ISO string
 }
 

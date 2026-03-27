@@ -34,7 +34,6 @@ import TextLoader from './TextLoader';
 const Dashboard: React.FC = () => {
   const { 
     language, 
-    deductCredits, 
     brand, 
     posts, 
     setWeeklyPlan, 
@@ -69,30 +68,28 @@ const Dashboard: React.FC = () => {
   ];
 
   const handleGenerateWeek = async () => {
-    if (deductCredits(50)) {
-      setAutopilotRunning(true);
-      setError(null);
-      try {
-        const newPosts = await gemini.generateWeeklyPlan(brand, brand.contentLanguage, 0);
-        setWeeklyPlan(newPosts);
-        
-        // Trigger event for each new post
-        newPosts.forEach(post => {
-          triggerOutboundEvent({
-            eventType: 'post_created',
-            platform: post.platform,
-            postId: post.id,
-            content: post.content,
-            assetUrl: post.imagePreviewUrl,
-            sourceModule: 'dashboard'
-          });
+    setAutopilotRunning(true);
+    setError(null);
+    try {
+      const newPosts = await gemini.generateWeeklyPlan(brand, brand.contentLanguage, 0);
+      setWeeklyPlan(newPosts);
+      
+      // Trigger event for each new post
+      newPosts.forEach(post => {
+        triggerOutboundEvent({
+          eventType: 'post_created',
+          platform: post.platform,
+          postId: post.id,
+          content: post.content,
+          assetUrl: post.imagePreviewUrl,
+          sourceModule: 'dashboard'
         });
-      } catch (err: any) {
-        console.error("Weekly plan generation failed", err);
-        setError(err.message || "Failed to generate weekly plan.");
-      } finally {
-        setAutopilotRunning(false);
-      }
+      });
+    } catch (err: any) {
+      console.error("Weekly plan generation failed", err);
+      setError(err.message || "Failed to generate weekly plan.");
+    } finally {
+      setAutopilotRunning(false);
     }
   };
 
@@ -128,54 +125,49 @@ const Dashboard: React.FC = () => {
     const post = posts.find(p => p.id === postId);
     if (!post) return;
 
-    const costs = { text: 5, vision: 10, system: 15 };
-    if (deductCredits(costs[type])) {
-      setRegeneratingId(postId);
-      setRegeneratingType(type);
-      setError(null);
-      try {
-        let updates: Partial<SocialPost> = {};
-        if (type === 'text') {
-          const result = await gemini.refineText(post, t.dashboard.refineTextPrompt, brand, brand.contentLanguage);
-          updates = { content: result.content };
-        } else if (type === 'vision') {
-          const result = await gemini.refineImage(post, t.dashboard.refineImagePrompt, brand);
-          updates = {
-            imageBrief: result.imageBrief,
-            imagePreviewUrl: result.imagePreviewUrl
-          };
-        } else {
-          // System - full regenerate (Content, Hook, Image)
-          const result = await gemini.generateSocialPost(post.topic, post.platform, brand, brand.contentLanguage);
-          updates = {
-            content: result.content,
-            hook: result.hook,
-            hashtags: result.hashtags,
-            imageBrief: result.imageBrief,
-            imagePreviewUrl: result.imagePreviewUrl
-          };
-        }
-        
-        updatePost(postId, updates);
-        
-        triggerOutboundEvent({
-          eventType: 'post_updated',
-          platform: post.platform,
-          postId: post.id,
-          content: updates.content || post.content,
-          assetUrl: updates.imagePreviewUrl || post.imagePreviewUrl,
-          sourceModule: 'dashboard',
-          metadata: { regenerationType: type }
-        });
-      } catch (err: any) {
-        console.error("Regeneration failed", err);
-        setError(err.message || "Regeneration failed.");
-      } finally {
-        setRegeneratingId(null);
-        setRegeneratingType(null);
+    setRegeneratingId(postId);
+    setRegeneratingType(type);
+    setError(null);
+    try {
+      let updates: Partial<SocialPost> = {};
+      if (type === 'text') {
+        const result = await gemini.refineText(post, t.dashboard.refineTextPrompt, brand, brand.contentLanguage);
+        updates = { content: result.content };
+      } else if (type === 'vision') {
+        const result = await gemini.refineImage(post, t.dashboard.refineImagePrompt, brand);
+        updates = {
+          imageBrief: result.imageBrief,
+          imagePreviewUrl: result.imagePreviewUrl
+        };
+      } else {
+        // System - full regenerate (Content, Hook, Image)
+        const result = await gemini.generateSocialPost(post.topic, post.platform, brand, brand.contentLanguage);
+        updates = {
+          content: result.content,
+          hook: result.hook,
+          hashtags: result.hashtags,
+          imageBrief: result.imageBrief,
+          imagePreviewUrl: result.imagePreviewUrl
+        };
       }
-    } else {
-      setError(t.dashboard.insufficientCredits || "Insufficient Fuel Credits (FC). Please recharge.");
+      
+      updatePost(postId, updates);
+      
+      triggerOutboundEvent({
+        eventType: 'post_updated',
+        platform: post.platform,
+        postId: post.id,
+        content: updates.content || post.content,
+        assetUrl: updates.imagePreviewUrl || post.imagePreviewUrl,
+        sourceModule: 'dashboard',
+        metadata: { regenerationType: type }
+      });
+    } catch (err: any) {
+      console.error("Regeneration failed", err);
+      setError(err.message || "Regeneration failed.");
+    } finally {
+      setRegeneratingId(null);
+      setRegeneratingType(null);
     }
   };
 

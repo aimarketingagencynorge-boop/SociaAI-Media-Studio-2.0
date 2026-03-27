@@ -40,7 +40,6 @@ const MediaLab: React.FC = () => {
     updateMediaAsset,
     addPost,
     setActiveView,
-    deductCredits,
     triggerOutboundEvent
   } = useStore();
   
@@ -135,50 +134,42 @@ const MediaLab: React.FC = () => {
   const handleEnhanceImage = async (prompt: string) => {
     if (!selectedAsset || selectedAsset.type !== 'image') return;
     
-    if (deductCredits(10)) {
-      setIsProcessing(true);
-      setError(null);
-      try {
-        const source = selectedAsset.editedUrl || selectedAsset.sourceUrl;
-        const enhanced = await gemini.enhanceImage(source, prompt, brand);
-        updateMediaAsset(selectedAsset.id, { 
-          editedUrl: enhanced,
-          status: 'edited'
-        });
-        setSuccessMsg(t.lab.enhanceSuccess);
-        setTimeout(() => setSuccessMsg(null), 3000);
-      } catch (e) {
-        setError(t.lab.enhanceFailed);
-      } finally {
-        setIsProcessing(false);
-      }
-    } else {
-      setError(t.lab.insufficientCredits);
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const source = selectedAsset.editedUrl || selectedAsset.sourceUrl;
+      const enhanced = await gemini.enhanceImage(source, prompt, brand);
+      updateMediaAsset(selectedAsset.id, { 
+        editedUrl: enhanced,
+        status: 'edited'
+      });
+      setSuccessMsg(t.lab.enhanceSuccess);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (e) {
+      setError(t.lab.enhanceFailed);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleGenerateThumbnail = async () => {
     if (!selectedAsset || selectedAsset.type !== 'video') return;
     
-    if (deductCredits(15)) {
-      setIsProcessing(true);
-      setError(null);
-      try {
-        const result = await gemini.generateThumbnail(postDraft.mediaDescription || t.lab.videoContentDefault, brand, language);
-        updateMediaAsset(selectedAsset.id, { 
-          thumbnailUrl: result.url,
-          status: 'edited'
-        });
-        setPostDraft(prev => ({ ...prev, hook: result.hook }));
-        setSuccessMsg(t.lab.thumbnailSuccess);
-        setTimeout(() => setSuccessMsg(null), 3000);
-      } catch (e) {
-        setError(t.lab.thumbnailFailed);
-      } finally {
-        setIsProcessing(false);
-      }
-    } else {
-      setError(t.lab.insufficientCreditsThumbnail);
+    setIsProcessing(true);
+    setError(null);
+    try {
+      const result = await gemini.generateThumbnail(postDraft.mediaDescription || t.lab.videoContentDefault, brand, language);
+      updateMediaAsset(selectedAsset.id, { 
+        thumbnailUrl: result.url,
+        status: 'edited'
+      });
+      setPostDraft(prev => ({ ...prev, hook: result.hook }));
+      setSuccessMsg(t.lab.thumbnailSuccess);
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (e) {
+      setError(t.lab.thumbnailFailed);
+    } finally {
+      setIsProcessing(false);
     }
   };
 

@@ -14,11 +14,49 @@ const TikTokIcon = ({ size, className }: { size: number, className?: string }) =
 );
 
 const Settings: React.FC = () => {
-  const { language, socialLinks, toggleSocialLink, webhookUrl, brand, updateBrand, geminiApiKey, setGeminiApiKey, saveUserApiKey } = useStore();
+  const { language, socialLinks, toggleSocialLink, webhookUrl, brand, updateBrand, aiSettings, workspaceId } = useStore();
   const t = translations[language];
-  const [manualKey, setManualKey] = React.useState(geminiApiKey || '');
-  const [isSavingKey, setIsSavingKey] = React.useState(false);
+  const [manualKey, setManualKey] = React.useState('');
+  const [isValidating, setIsValidating] = React.useState(false);
+  const [validationError, setValidationError] = React.useState<string | null>(null);
   const [tempWebhook, setTempWebhook] = React.useState(webhookUrl);
+
+  const handleUpdateAISettings = async (updates: any) => {
+    try {
+      const response = await fetch('/api/ai/settings/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId, ...updates })
+      });
+      if (!response.ok) throw new Error("Failed to update AI settings");
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleValidateKey = async () => {
+    if (!manualKey) return;
+    setIsValidating(true);
+    setValidationError(null);
+    try {
+      const response = await fetch('/api/ai/settings/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: manualKey })
+      });
+      const result = await response.json();
+      if (result.valid) {
+        await handleUpdateAISettings({ userApiKey: manualKey, activeSource: 'user_api_key' });
+        setManualKey('');
+      } else {
+        setValidationError(result.error || "Invalid API Key");
+      }
+    } catch (err) {
+      setValidationError("Validation failed");
+    } finally {
+      setIsValidating(false);
+    }
+  };
 
   const platforms = [
     { id: 'instagram', icon: <Instagram size={20} />, label: 'Instagram' },
@@ -36,75 +74,125 @@ const Settings: React.FC = () => {
         <p className="text-white/40 uppercase tracking-widest text-[10px] font-orbitron">{t.settings.desc}</p>
       </header>
 
-      {/* NEURAL LINK CONFIGURATION (API KEYS) */}
+      {/* AI ACCESS HUB */}
       <section className="glass-panel p-8 rounded-[2.5rem] border-magenta-500/20 mb-12 relative overflow-hidden">
         <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="p-3 bg-magenta-500/10 text-magenta-500 rounded-xl"><Key size={24} /></div>
-            <div>
-              <h3 className="font-orbitron text-lg text-white">{t.settings.apiTitle}</h3>
-              <p className="text-[9px] font-orbitron text-white/30 uppercase tracking-[0.2em]">{t.settings.apiDesc}</p>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-magenta-500/10 text-magenta-500 rounded-xl"><Key size={24} /></div>
+              <div>
+                <h3 className="font-orbitron text-lg text-white">AI Access Hub</h3>
+                <p className="text-[9px] font-orbitron text-white/30 uppercase tracking-[0.2em]">Neural Link & Credit Management</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest mb-1">Active Source</p>
+              <div className="px-3 py-1 bg-magenta-500/10 border border-magenta-500/30 rounded-full text-[10px] font-orbitron text-magenta-500 uppercase">
+                {aiSettings?.activeSource?.replace('_', ' ') || 'Initializing...'}
+              </div>
             </div>
           </div>
 
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
-              <div className="md:col-span-2 space-y-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+            {/* Credits Section */}
+            <div className="space-y-6">
+              <div className="p-6 bg-white/5 rounded-3xl border border-white/10">
+                <p className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest mb-2">ForceCredits Balance</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-black font-orbitron text-white">{aiSettings?.creditBalance || 0}</span>
+                  <span className="text-xs font-orbitron text-magenta-500 uppercase tracking-widest">FC</span>
+                </div>
+                <div className="mt-4 pt-4 border-t border-white/5 flex justify-between items-center">
+                  <p className="text-[9px] text-white/30 uppercase tracking-wider">Starter credits granted: {aiSettings?.starterCreditsGranted ? 'YES' : 'NO'}</p>
+                  <button 
+                    onClick={() => useStore.getState().setActiveView('store')}
+                    className="text-[9px] font-orbitron text-magenta-500 hover:text-magenta-400 uppercase tracking-widest transition-colors"
+                  >
+                    Buy More Credits
+                  </button>
+                </div>
+              </div>
+
+              {aiSettings?.hasUserApiKey && (
+                <div className="space-y-4">
+                  <p className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Switch AI Source</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => handleUpdateAISettings({ activeSource: 'starter_credits' })}
+                      className={`py-3 rounded-xl font-orbitron text-[10px] border transition-all ${
+                        aiSettings.activeSource !== 'user_api_key'
+                          ? 'bg-magenta-500/20 border-magenta-500 text-white'
+                          : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'
+                      }`}
+                    >
+                      USE CREDITS
+                    </button>
+                    <button
+                      onClick={() => handleUpdateAISettings({ activeSource: 'user_api_key' })}
+                      className={`py-3 rounded-xl font-orbitron text-[10px] border transition-all ${
+                        aiSettings.activeSource === 'user_api_key'
+                          ? 'bg-magenta-500/20 border-magenta-500 text-white'
+                          : 'bg-white/5 border-white/10 text-white/40 hover:border-white/20'
+                      }`}
+                    >
+                      USE MY KEY
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* API Key Section */}
+            <div className="space-y-6">
+              <div className="space-y-2">
                 <label className="text-[10px] font-orbitron text-magenta-500 uppercase tracking-widest block">
-                  {t.settings.apiLabel}
+                  {aiSettings?.hasUserApiKey ? 'Update Gemini API Key' : 'Add Your Own Gemini API Key'}
                 </label>
                 <div className="relative group">
                   <input 
                     type="password" 
                     value={manualKey}
                     onChange={(e) => setManualKey(e.target.value)}
-                    placeholder={t.settings.apiPlaceholder}
+                    placeholder={aiSettings?.hasUserApiKey ? '••••••••••••••••' : 'Enter your Gemini API Key...'}
                     className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-magenta-500 transition-all text-xs font-mono pr-12"
                   />
                   <Lock className="absolute right-4 top-1/2 -translate-y-1/2 text-white/10 group-focus-within:text-magenta-500 transition-colors" size={16} />
                 </div>
+                {validationError && (
+                  <p className="text-[9px] text-red-500 font-orbitron uppercase tracking-wider">{validationError}</p>
+                )}
               </div>
-              <NeonButton 
-                variant="purple" 
-                className="py-4 text-[10px]"
-                onClick={async () => {
-                  setIsSavingKey(true);
-                  await saveUserApiKey(manualKey);
-                  setTimeout(() => setIsSavingKey(false), 1000);
-                }}
-                disabled={isSavingKey}
-              >
-                {isSavingKey ? t.settings.apiKeySync : t.settings.apiKeyUpdate}
-              </NeonButton>
-            </div>
 
-            <div className="flex items-start gap-4 p-4 bg-magenta-500/5 border border-magenta-500/10 rounded-2xl">
-              <ShieldCheck size={20} className="text-magenta-500 shrink-0 mt-1" />
-              <div className="space-y-1">
-                <p className="text-[10px] font-orbitron text-white/80 uppercase tracking-wider">{t.settings.securityProtocol}</p>
-                <p className="text-[9px] text-white/30 leading-relaxed">
-                  {t.settings.securityDesc}
-                </p>
-              </div>
-            </div>
-
-            {window.aistudio && (
-              <div className="pt-4 border-t border-white/5">
-                <p className="text-[9px] font-orbitron text-white/20 uppercase tracking-widest mb-4">{t.settings.platformIntegration}</p>
+              <div className="flex gap-3">
                 <NeonButton 
-                  variant="cyan" 
-                  glow={false}
-                  className="w-full py-4 text-[10px] opacity-60 hover:opacity-100"
-                  onClick={async () => {
-                    if (window.aistudio) {
-                      await window.aistudio.openSelectKey();
-                    }
-                  }}
+                  variant="purple" 
+                  className="flex-1 py-4 text-[10px]"
+                  onClick={handleValidateKey}
+                  disabled={isValidating || !manualKey}
                 >
-                  {t.settings.selectKey}
+                  {isValidating ? 'VALIDATING...' : aiSettings?.hasUserApiKey ? 'UPDATE & VALIDATE' : 'VALIDATE & ACTIVATE'}
                 </NeonButton>
+                
+                {aiSettings?.hasUserApiKey && (
+                  <button 
+                    onClick={() => handleUpdateAISettings({ userApiKey: null, activeSource: 'starter_credits' })}
+                    className="px-4 bg-red-500/10 text-red-500 border border-red-500/30 rounded-xl hover:bg-red-500/20 transition-all"
+                  >
+                    <Share2 size={16} className="rotate-45" />
+                  </button>
+                )}
               </div>
-            )}
+
+              <div className="flex items-start gap-4 p-4 bg-magenta-500/5 border border-magenta-500/10 rounded-2xl">
+                <ShieldCheck size={20} className="text-magenta-500 shrink-0 mt-1" />
+                <div className="space-y-1">
+                  <p className="text-[10px] font-orbitron text-white/80 uppercase tracking-wider">Security Protocol</p>
+                  <p className="text-[9px] text-white/30 leading-relaxed">
+                    Your API key is stored securely in our encrypted database. It is used only for your workspace's AI operations.
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-magenta-500/5 rounded-full blur-[80px] pointer-events-none" />
