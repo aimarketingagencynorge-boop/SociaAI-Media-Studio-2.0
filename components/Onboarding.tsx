@@ -53,7 +53,8 @@ const Onboarding: React.FC = () => {
     credits,
     aiSettings,
     isLoadingAICredits,
-    workspaceId
+    workspaceId,
+    userId
   } = useStore();
   
   const t = translations[language];
@@ -61,6 +62,7 @@ const Onboarding: React.FC = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [logs, setLogs] = useState<{msg: string, type?: 'system' | 'error' | 'source' | 'warn'}[]>([]);
   const [scanComplete, setScanComplete] = useState(false);
+  const [isRepairing, setIsRepairing] = useState(false);
   const consoleRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,7 +78,7 @@ const Onboarding: React.FC = () => {
   const handleScan = async () => {
     if (!url) return;
     
-    const hasCredits = (aiSettings?.creditBalance && aiSettings.creditBalance > 0) || (credits > 0);
+    const hasCredits = aiSettings ? (aiSettings.creditBalance > 0) : (credits > 0);
     const isInitializing = isLoadingAICredits || (!aiSettings && workspaceId);
 
     if (isInitializing) {
@@ -85,7 +87,29 @@ const Onboarding: React.FC = () => {
     }
 
     if (!hasCredits) {
-      addLog("INSUFFICIENT_CREDITS: Mission requires energy. Please check your credit balance.", "error");
+      setIsRepairing(true);
+      addLog("REPAIRING_NEURAL_LINK: Attempting to restore energy units...", "warn");
+      try {
+        const response = await fetch('/api/auth/init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, email: brand.email })
+        });
+        const data = await response.json();
+        if (data.credits > 0) {
+          addLog("ENERGY_RESTORED: 500 units synchronized. Retrying scan...", "system");
+          setIsRepairing(false);
+          // The store will update via AuthContext snapshots, but we can wait a bit
+          setTimeout(() => handleScan(), 1000);
+          return;
+        } else {
+          addLog("REPAIR_FAILED: Could not restore energy. Please check Settings.", "error");
+        }
+      } catch (err) {
+        console.error("Repair failed:", err);
+        addLog("REPAIR_FAILED: Portal unreachable.", "error");
+      }
+      setIsRepairing(false);
       return;
     }
 
@@ -212,14 +236,14 @@ const Onboarding: React.FC = () => {
                       variant="cyan" 
                       className="w-full py-5 font-black text-lg" 
                       onClick={() => handleScan()} 
-                      disabled={isScanning || !url || isLoadingAICredits || (!aiSettings && !!workspaceId) || ((!aiSettings?.creditBalance || aiSettings.creditBalance <= 0) && credits <= 0)}
+                      disabled={isScanning || !url || isLoadingAICredits || (!aiSettings && !!workspaceId) || isRepairing}
                     >
-                      {isScanning ? 'SCANNING...' : (isLoadingAICredits || (!aiSettings && !!workspaceId)) ? 'INITIALIZING...' : 'SCAN UNIVERSE'}
+                      {isScanning ? 'SCANNING...' : (isLoadingAICredits || (!aiSettings && !!workspaceId)) ? 'INITIALIZING...' : (isRepairing ? 'REPAIRING LINK...' : 'SCAN UNIVERSE')}
                     </NeonButton>
                     
                     {((!aiSettings?.creditBalance || aiSettings.creditBalance <= 0) && credits <= 0) && !isLoadingAICredits && (!!aiSettings || !workspaceId) && (
                       <p className="text-[9px] font-orbitron text-center text-magenta-500 uppercase tracking-widest animate-pulse">
-                        INSUFFICIENT CREDITS. PLEASE RECHARGE IN SETTINGS.
+                        {isRepairing ? 'REPAIRING NEURAL LINK... PLEASE WAIT' : 'INSUFFICIENT CREDITS. PLEASE RECHARGE IN SETTINGS.'}
                       </p>
                     )}
                   </div>

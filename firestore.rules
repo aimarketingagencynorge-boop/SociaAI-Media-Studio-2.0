@@ -93,7 +93,7 @@ service cloud.firestore {
       // Only server-side or admin can create/update sensitive fields
       allow write: if isAdmin() || isOwner(workspaceId);
       
-      match /credit_history/{historyId} {
+      match /transactions/{historyId} {
         allow read: if isWorkspaceMember(workspaceId) || isAdmin() || isOwner(workspaceId);
         allow write: if false; // Only server can write history
       }

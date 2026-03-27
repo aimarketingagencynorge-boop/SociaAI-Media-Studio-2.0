@@ -140,14 +140,18 @@ async function resolveAiAccess(workspaceId: string): Promise<{
   error?: string;
   status?: number;
 }> {
+  console.log(`[AI Access] Resolving access for workspaceId: ${workspaceId}`);
   const workspaceRef = db.collection("workspaces").doc(workspaceId);
   const workspaceSnap = await workspaceRef.get();
 
   if (!workspaceSnap.exists) {
+    console.warn(`[AI Access] Workspace not found: ${workspaceId}`);
     return { apiKey: "", source: "starter_credits", cost: 0, error: "Workspace not found", status: 404 };
   }
 
   const settings: AIAccessSettings = workspaceSnap.data() as AIAccessSettings;
+  console.log(`[AI Access] Workspace data for ${workspaceId}: creditBalance=${settings.creditBalance}, activeSource=${settings.activeSource}, starterCreditsGranted=${settings.starterCreditsGranted}`);
+  
   const masterKey = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
 
   // Mode 1: User's own API key
@@ -156,13 +160,16 @@ async function resolveAiAccess(workspaceId: string): Promise<{
       // Decrypt the key
       const decryptedKey = decrypt(settings.userApiKeyEncrypted);
       if (decryptedKey) {
+        console.log(`[AI Access] Using User API Key`);
         return { apiKey: decryptedKey, source: "user_api_key", cost: 0 };
       }
     }
     
     // Fallback to Master Key if user key is selected but invalid/missing
     if (masterKey) {
+      console.log(`[AI Access] User key invalid/missing, falling back to Master Key. Balance: ${settings.creditBalance}`);
       if (settings.creditBalance <= 0) {
+        console.warn(`[AI Access] Resource exhausted (fallback mode)`);
         return { 
           apiKey: "", 
           source: "starter_credits", 
@@ -174,15 +181,18 @@ async function resolveAiAccess(workspaceId: string): Promise<{
       return { apiKey: masterKey, source: "starter_credits", cost: 0 };
     }
 
+    console.warn(`[AI Access] User API key invalid and no Master Key fallback`);
     return { apiKey: "", source: "user_api_key", cost: 0, error: "User API key is not valid or missing", status: 400 };
   }
 
   // Mode 2: Platform Credits (Starter or Purchased)
   if (!masterKey) {
+    console.error(`[AI Access] Master Key missing from environment!`);
     return { apiKey: "", source: settings.activeSource, cost: 0, error: "AI service configuration error (Missing Master Key)", status: 500 };
   }
 
-  if (settings.creditBalance <= 0) {
+  if (settings.creditBalance === undefined || settings.creditBalance === null || settings.creditBalance <= 0) {
+    console.warn(`[AI Access] Resource exhausted for ${workspaceId}. Balance: ${settings.creditBalance}`);
     return { 
       apiKey: "", 
       source: settings.activeSource, 
@@ -192,6 +202,7 @@ async function resolveAiAccess(workspaceId: string): Promise<{
     };
   }
 
+  console.log(`[AI Access] Using Master Key with credits. Remaining: ${settings.creditBalance}`);
   return { apiKey: masterKey, source: settings.activeSource, cost: 0 };
 }
 
@@ -251,7 +262,7 @@ async function startServer() {
         await workspaceRef.set(initialSettings);
 
         // Record transaction
-        const historyRef = workspaceRef.collection("credit_history").doc();
+        const historyRef = workspaceRef.collection("transactions").doc();
         const transactionRecord: CreditTransaction = {
           userId,
           amount: STARTER_AMOUNT,
@@ -278,40 +289,42 @@ async function startServer() {
         return res.json({ success: true, message: "Starter credits granted", credits: STARTER_AMOUNT, workspaceId });
       }
 
-      // REPAIR LOGIC: If workspace exists but has 0 credits and user is still in onboarding step 1
+      // REPAIR LOGIC: If workspace exists but has 0 or missing credits and user is still in onboarding step 1
       const workspaceData = workspaceSnap.data() as AIAccessSettings;
       const userData = userSnap.data();
       
-      if (workspaceData.creditBalance === 0 && (!userData?.onboardingStep || userData.onboardingStep <= 1)) {
-        // Double check if they ever had a grant
-        const historySnap = await workspaceRef.collection("credit_history")
-          .where("actionType", "==", "initial_grant")
-          .limit(1)
-          .get();
-          
-        if (historySnap.empty) {
-          console.log(`[Auth Init] Repairing user ${userId}: 0 credits found in onboarding. Granting 500.`);
-          await workspaceRef.update({ 
-            creditBalance: STARTER_AMOUNT,
-            starterCreditsGranted: true,
-            updatedAt: new Date().toISOString()
-          });
-          await userRef.update({ 
-            credits: STARTER_AMOUNT,
-            updatedAt: new Date().toISOString()
-          });
-          
-          const historyRef = workspaceRef.collection("credit_history").doc();
-          await historyRef.set({
-            userId,
-            amount: STARTER_AMOUNT,
-            actionType: 'initial_grant',
-            source: 'starter',
-            description: 'Starter credits (Repair)',
-            createdAt: new Date().toISOString()
-          });
-          return res.json({ success: true, message: "Starter credits repaired", credits: STARTER_AMOUNT, workspaceId });
+      const hasZeroCredits = workspaceData.creditBalance === 0 || workspaceData.creditBalance === undefined || workspaceData.creditBalance === null;
+      const isInOnboarding = !userData?.onboardingStep || userData.onboardingStep <= 2;
+
+      if (hasZeroCredits && isInOnboarding) {
+        console.log(`[Auth Init] Repairing user ${userId}: ${workspaceData.creditBalance} credits found in onboarding. Granting 500.`);
+        const updateObj: any = { 
+          creditBalance: STARTER_AMOUNT,
+          starterCreditsGranted: true,
+          updatedAt: new Date().toISOString()
+        };
+        
+        // Also ensure activeSource is correct
+        if (!workspaceData.activeSource) {
+          updateObj.activeSource = 'starter_credits';
         }
+
+        await workspaceRef.update(updateObj);
+        await userRef.update({ 
+          credits: STARTER_AMOUNT,
+          updatedAt: new Date().toISOString()
+        });
+        
+        const historyRef = workspaceRef.collection("transactions").doc();
+        await historyRef.set({
+          userId,
+          amount: STARTER_AMOUNT,
+          actionType: 'initial_grant',
+          source: 'starter',
+          description: 'Starter credits (Repair)',
+          createdAt: new Date().toISOString()
+        });
+        return res.json({ success: true, message: "Starter credits repaired", credits: STARTER_AMOUNT, workspaceId });
       }
 
       // Migration/Fix: If activeSource is user_api_key but key is missing/invalid, reset to starter_credits
@@ -500,6 +513,8 @@ async function startServer() {
       // If success and credit mode -> Deduct credits in a transaction
       if (shouldUseCredits && cost > 0) {
         const workspaceRef = db.collection("workspaces").doc(targetWorkspaceId);
+        const userRef = db.collection("users").doc(userId);
+
         await db.runTransaction(async (transaction: any) => {
           const freshSnap = await transaction.get(workspaceRef);
           const freshData = freshSnap.data() as AIAccessSettings;
@@ -511,8 +526,14 @@ async function startServer() {
             "updatedAt": new Date().toISOString()
           });
 
+          // Sync with users collection for frontend consistency
+          transaction.update(userRef, {
+            "credits": newBalance,
+            "updatedAt": new Date().toISOString()
+          });
+
           // Record transaction history
-          const historyRef = workspaceRef.collection("credit_history").doc();
+          const historyRef = workspaceRef.collection("transactions").doc();
           const transactionRecord: CreditTransaction = {
             userId,
             amount: -cost,
@@ -539,6 +560,28 @@ async function startServer() {
         code: error.code,
         details: error.details || ""
       });
+    }
+  });
+
+  // Diagnostic Endpoint
+  app.get("/api/admin/diagnose-user/:userId", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const userRef = db.collection("users").doc(userId);
+      const workspaceRef = db.collection("workspaces").doc(userId);
+      
+      const [userSnap, workspaceSnap] = await Promise.all([userRef.get(), workspaceRef.get()]);
+      
+      res.json({
+        userId,
+        userExists: userSnap.exists,
+        userData: userSnap.exists ? userSnap.data() : null,
+        workspaceExists: workspaceSnap.exists,
+        workspaceData: workspaceSnap.exists ? workspaceSnap.data() : null,
+        masterKeyConfigured: !!(process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY)
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

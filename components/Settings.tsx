@@ -104,12 +104,28 @@ const Settings: React.FC = () => {
                 </div>
                 <div className="mt-4 pt-4 border-t border-white/5 flex justify-between items-center">
                   <p className="text-[9px] text-white/30 uppercase tracking-wider">Starter credits granted: {aiSettings?.starterCreditsGranted ? 'YES' : 'NO'}</p>
-                  <button 
-                    onClick={() => useStore.getState().setActiveView('store')}
-                    className="text-[9px] font-orbitron text-magenta-500 hover:text-magenta-400 uppercase tracking-widest transition-colors"
-                  >
-                    Buy More Credits
-                  </button>
+                  <div className="flex items-center gap-4">
+                    <button 
+                      onClick={async () => {
+                        const state = useStore.getState();
+                        await fetch('/api/auth/init', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ userId: state.firebaseUser?.uid, email: state.firebaseUser?.email })
+                        });
+                        window.location.reload();
+                      }}
+                      className="text-[9px] font-orbitron text-cyan-400 hover:text-cyan-300 uppercase tracking-widest transition-colors"
+                    >
+                      Repair Link
+                    </button>
+                    <button 
+                      onClick={() => useStore.getState().setActiveView('store')}
+                      className="text-[9px] font-orbitron text-magenta-500 hover:text-magenta-400 uppercase tracking-widest transition-colors"
+                    >
+                      Buy More Credits
+                    </button>
+                  </div>
                 </div>
               </div>
 
