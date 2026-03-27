@@ -6,7 +6,7 @@ import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
 import { getFirestore } from "firebase-admin/firestore";
 import { GoogleGenAI, Modality } from "@google/genai";
-import { AI_COSTS, CreditTransaction, AIAccessSettings, AISource, CreditActionType } from "./types.js";
+import { AI_COSTS, CreditTransaction, AIAccessSettings, AISource, CreditActionType } from "./types.ts";
 
 // Load Firebase configuration
 const firebaseConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
@@ -32,8 +32,13 @@ let useDefaultFallback = false;
 
 function getDb(forceDefault = false) {
   if (useDefaultFallback || forceDefault) return getFirestore();
-  if (configDbId && configDbId !== "(default)") {
-    return getFirestore(configDbId);
+  try {
+    if (configDbId && configDbId !== "(default)") {
+      return getFirestore(configDbId);
+    }
+  } catch (e) {
+    console.warn("[Server] Failed to get named Firestore instance, falling back to default");
+    useDefaultFallback = true;
   }
   return getFirestore();
 }
@@ -356,7 +361,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*all", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

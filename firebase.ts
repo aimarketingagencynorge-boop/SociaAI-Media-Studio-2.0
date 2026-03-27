@@ -6,23 +6,39 @@ import firebaseConfig from './firebase-applet-config.json';
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
 
-// Use named database if provided, otherwise default
-export const db = (firebaseConfig as any).firestoreDatabaseId 
-  ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
-  : getFirestore(app);
+// Initialize Firestore with fallback logic
+let dbInstance: any;
+try {
+  const dbId = (firebaseConfig as any).firestoreDatabaseId;
+  if (dbId && dbId !== "(default)") {
+    dbInstance = getFirestore(app, dbId);
+  } else {
+    dbInstance = getFirestore(app);
+  }
+} catch (e) {
+  console.warn("Failed to initialize Firestore with config ID, falling back to default:", e);
+  dbInstance = getFirestore(app);
+}
 
+export const db = dbInstance;
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export type { User };
 
-// Connection test with more detailed logging
+// Connection test with more detailed logging and automatic fallback
 async function testConnection() {
+  const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
   try {
-    console.log(`Testing Firestore connection to database: ${(firebaseConfig as any).firestoreDatabaseId || '(default)'}...`);
+    console.log(`Testing Firestore connection to database: ${dbId}...`);
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log("Firestore connection test successful (reached server).");
   } catch (error: any) {
+    // If we get a NOT_FOUND error on a named database, we should probably be using the default one
+    if (dbId !== '(default)' && (error?.code === 'not-found' || error?.message?.includes('not-found'))) {
+      console.warn("Named database not found, application may need to use (default) database.");
+    }
+
     // If we get a permission-denied error, it actually means we REACHED the server
     // but the rules didn't allow the read. This is still a "success" for connectivity.
     if (error?.code === 'permission-denied') {
@@ -32,7 +48,7 @@ async function testConnection() {
 
     console.error("Firestore connection test failed:", error);
     if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('unavailable'))) {
-      console.error("CRITICAL: Firestore is unreachable. Please check project provisioning and database ID.");
+      console.error("CRITICAL: Firestore is unreachable. This often means Firestore is not enabled in the Firebase project or the project ID is incorrect.");
     }
   }
 }
