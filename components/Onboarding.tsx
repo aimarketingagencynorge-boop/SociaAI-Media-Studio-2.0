@@ -70,7 +70,7 @@ const Onboarding: React.FC = () => {
     setLogs(prev => [...prev, { msg: `> [${type.toUpperCase()}]: ${msg}`, type }]);
   };
 
-  const { workspaceId, aiSettings } = useStore();
+  const { workspaceId, aiSettings, isLoadingAICredits } = useStore();
   const [manualKey, setManualKey] = useState('');
   const [showManualAuth, setShowManualAuth] = useState(!window.aistudio);
 
@@ -111,6 +111,11 @@ const Onboarding: React.FC = () => {
   const handleScan = async (force: boolean = false) => {
     if (!url) return;
     
+    if (isLoadingAICredits && !force) {
+      addLog("Initializing Neural Link... Please wait.", "system");
+      return;
+    }
+
     // Proactive check for API key selection
     // If force is true, we skip the check to mitigate race conditions after openSelectKey
     const hasAistudioKey = window.aistudio ? await window.aistudio.hasSelectedApiKey() : false;

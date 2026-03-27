@@ -236,7 +236,7 @@ export class GeminiService {
         Extract: official name, detailed description of services/products, industry, core mission, and brand colors.
         Report must be in ${langName}.`;
       
-      intelligence = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+      intelligence = await this.callGatekeeper('scan_brand', prompt, 'gemini-3-flash-preview', {
         tools: [{ googleSearch: {} }]
       });
     } catch (searchError: any) {
@@ -244,7 +244,7 @@ export class GeminiService {
       const fallbackPrompt = `Analyze this business URL: ${url.trim()}. 
         Based on the URL name and common knowledge, describe the business, industry, and mission.
         Report must be in ${langName}.`;
-      intelligence = await this.callGatekeeper('ai_enhance', fallbackPrompt);
+      intelligence = await this.callGatekeeper('scan_brand', fallbackPrompt);
     }
 
     try {
@@ -309,7 +309,7 @@ export class GeminiService {
         Ensure the content matches the platform's focus and goal.
         Return JSON format.`;
 
-      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+      const responseText = await this.callGatekeeper('generate_post', prompt, 'gemini-3-flash-preview', {
         responseMimeType: "application/json"
       });
 
@@ -414,7 +414,7 @@ export class GeminiService {
         Ensure each post follows the specific platform strategy.
         Return as a JSON array.`;
 
-      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+      const responseText = await this.callGatekeeper('generate_post', prompt, 'gemini-3-flash-preview', {
         responseMimeType: "application/json"
       });
 

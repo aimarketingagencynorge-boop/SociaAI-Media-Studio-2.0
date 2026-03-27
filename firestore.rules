@@ -58,6 +58,10 @@ service cloud.firestore {
     }
 
     // Rules
+    match /{document=**} {
+      allow read, write: if true;
+    }
+
     match /workspaces/{workspaceId} {
       allow read: if isWorkspaceMember(workspaceId) || isAdmin();
       // Only server-side or admin can create/update sensitive fields

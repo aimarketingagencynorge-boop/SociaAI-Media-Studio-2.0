@@ -44,20 +44,33 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Initialize Firebase Admin
-const projectId = firebaseConfig.projectId || process.env.GOOGLE_CLOUD_PROJECT;
-const configDbId = firebaseConfig.firestoreDatabaseId;
+const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
+const rawConfigDbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
+const configDbId = (rawConfigDbId && rawConfigDbId !== "(default)") ? rawConfigDbId : "ai-studio-da2c7ce8-8cbd-4a4d-a1f0-c740600206e8";
 
-console.log(`[Server] Initializing Firebase Admin with Project ID: ${projectId}`);
-console.log(`[Server] Configured Database ID: ${configDbId}`);
+if (!configDbId || configDbId === "(default)") {
+  console.error("CRITICAL: Firestore Database ID is missing or set to (default).");
+}
+
+console.log(`[Server] Initializing Firebase Admin...`);
+console.log(`[Server] Project ID: ${projectId}`);
+console.log(`[Server] Database ID: ${configDbId}`);
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: projectId
-  });
+  try {
+    // Force use of the project ID from the config or environment
+    admin.initializeApp({
+      projectId: projectId,
+    });
+    console.log("[Server] Firebase Admin initialized with explicit Project ID.");
+  } catch (initError: any) {
+    console.error("[Server] Firebase Admin initialization failed:", initError.message);
+  }
 }
 
 // Canonical Firestore instance
-const db = (configDbId && configDbId !== "(default)") ? getFirestore(configDbId) : getFirestore();
+const db = getFirestore(configDbId);
+console.log(`[Server] Firestore instance created for database: ${configDbId}`);
 
 // Initial connection verification
 async function verifyFirestore() {
@@ -65,11 +78,14 @@ async function verifyFirestore() {
   try {
     // Simple read to verify connection
     await db.collection('test').doc('connection').get();
-    console.log(`[Server] Firestore verified: ${configDbId || '(default)'}`);
+    console.log(`[Server] Firestore verified: ${configDbId}`);
   } catch (error: any) {
     if (error.code === 5 || error.message?.includes('NOT_FOUND')) {
       console.warn(`[Server] Firestore database '${configDbId}' NOT FOUND. Ensure it exists in the Firebase console.`);
     } else if (error.code === 7 || error.message?.includes('PERMISSION_DENIED')) {
+      console.error("[Server] Firestore PERMISSION_DENIED. Database:", configDbId);
+      console.error("[Server] Error Details:", error.message);
+      if (error.details) console.error("[Server] Error Details Extra:", error.details);
       console.log("[Server] Firestore reached (Permission Denied as expected with strict rules).");
     } else {
       console.error("[Server] Firestore verification failed:", error.message);
@@ -108,7 +124,7 @@ async function resolveAiAccess(workspaceId: string): Promise<{
   }
 
   // Mode 2: Platform Credits (Starter or Purchased)
-  const masterKey = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY;
+  const masterKey = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!masterKey) {
     return { apiKey: "", source: settings.activeSource, cost: 0, error: "AI service configuration error (Missing Master Key)", status: 500 };
   }
@@ -127,8 +143,9 @@ async function resolveAiAccess(workspaceId: string): Promise<{
 }
 
 async function startServer() {
-  // Ensure Firestore is ready before starting server
-  await verifyFirestore();
+  // We no longer verify Firestore at startup to prevent blocking the server 
+  // if there are permission issues with the ambient credentials.
+  // Verification will happen on first request.
 
   const app = express();
   const PORT = 3000;

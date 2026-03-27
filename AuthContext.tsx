@@ -4,6 +4,7 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useStore } from './store';
+import { AIAccessSettings } from './types';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -25,25 +26,41 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initStatus, setInitStatus] = useState<'idle' | 'auth' | 'firestore' | 'workspace' | 'ready'>('idle');
   const { setAuthenticated, setFirebaseUser, updateBrand, setLanguage, setOnboardingStep, setUserId, setAiSettings, setIsLoadingAICredits, setWorkspaceId, workspaceId } = useStore();
 
   useEffect(() => {
+    setInitStatus('auth');
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       setFirebaseUser(user);
       setAuthenticated(!!user);
+      
       if (user) {
         setUserId(user.uid);
+        setInitStatus('firestore');
         
-        // Initialize user on backend (grant credits if needed)
-        fetch('/api/auth/init', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.uid, email: user.email })
-        }).catch(err => console.error("Failed to init user credits:", err));
+        // 1. Initialize user on backend (Auth Init)
+        const initUser = async () => {
+          try {
+            const response = await fetch('/api/auth/init', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: user.uid, email: user.email })
+            });
+            const data = await response.json();
+            if (data.workspaceId) {
+              setWorkspaceId(data.workspaceId);
+            }
+          } catch (err) {
+            console.error("[Auth Init] Failed to init user credits:", err);
+          }
+        };
+        initUser();
 
         setIsLoadingAICredits(true);
-        // Sync data from Firestore
+        
+        // 2. Sync User Data (Firestore Init)
         const userDocRef = doc(db, 'users', user.uid);
         const unsubscribeUser = onSnapshot(userDocRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -54,19 +71,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             
             if (data.workspaceId) {
               setWorkspaceId(data.workspaceId);
-            } else {
-              // No workspaceId, we can stop loading
-              setLoading(false);
+              setInitStatus('workspace');
             }
-          } else {
-            // User doc doesn't exist yet, we'll wait for /api/auth/init or just stop loading
-            // if we're not expecting a workspace sync
-            setLoading(false);
           }
         }, (error) => {
-          // Log but don't throw to prevent app crash during startup
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}`, false);
-          setLoading(false);
+          // If user doc fails, we still might have workspaceId from store or initUser
+          if (!workspaceId) setLoading(false);
         });
 
         return () => unsubscribeUser();
@@ -74,6 +85,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setAiSettings(null);
         setWorkspaceId('');
         setIsLoadingAICredits(false);
+        setInitStatus('ready');
         setLoading(false);
       }
     });
@@ -81,29 +93,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribeAuth();
   }, [setAuthenticated, setFirebaseUser, updateBrand, setLanguage, setOnboardingStep, setUserId, setWorkspaceId, setAiSettings, setIsLoadingAICredits]);
 
-  // Separate effect for workspace sync
+  // 3. Workspace Bootstrap
   useEffect(() => {
     if (!currentUser || !workspaceId) {
-      if (!currentUser) {
-        setIsLoadingAICredits(false);
-        setLoading(false);
-      }
+      // If we have a user but no workspaceId yet, we wait
       return;
     }
 
     const workspaceDocRef = doc(db, 'workspaces', workspaceId);
     const unsubscribeWorkspace = onSnapshot(workspaceDocRef, (docSnap) => {
       if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.aiSettings) {
-          setAiSettings(data.aiSettings);
-        }
+        const data = docSnap.data() as AIAccessSettings;
+        setAiSettings(data);
       }
       setIsLoadingAICredits(false);
+      setInitStatus('ready');
       setLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `workspaces/${workspaceId}`);
+      handleFirestoreError(error, OperationType.GET, `workspaces/${workspaceId}`, false);
       setIsLoadingAICredits(false);
+      setInitStatus('ready');
       setLoading(false);
     });
 

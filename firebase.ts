@@ -7,8 +7,14 @@ import firebaseConfig from './firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 
 // Initialize Firestore with a single canonical setup
-const dbId = (firebaseConfig as any).firestoreDatabaseId;
-export const db = (dbId && dbId !== "(default)") ? getFirestore(app, dbId) : getFirestore(app);
+const rawDbId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId;
+const dbId = (rawDbId && rawDbId !== "(default)") ? rawDbId : "ai-studio-da2c7ce8-8cbd-4a4d-a1f0-c740600206e8";
+
+if (!dbId || dbId === "(default)") {
+  console.error("CRITICAL: Firestore Database ID is missing or set to (default).");
+}
+
+export const db = getFirestore(app, dbId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -16,7 +22,8 @@ export type { User };
 
 // Connection test with diagnostic logging
 async function testConnection() {
-  const currentDbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+  const rawDbId = import.meta.env.VITE_FIRESTORE_DATABASE_ID || (firebaseConfig as any).firestoreDatabaseId;
+  const currentDbId = (rawDbId && rawDbId !== "(default)") ? rawDbId : "ai-studio-da2c7ce8-8cbd-4a4d-a1f0-c740600206e8";
   const projectId = firebaseConfig.projectId;
   
   console.log(`[Firebase Init] Project: ${projectId}`);
