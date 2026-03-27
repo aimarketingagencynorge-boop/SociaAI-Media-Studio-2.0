@@ -3,19 +3,69 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { AI_COSTS, CreditTransaction, AIAccessSettings, AISource, CreditActionType } from "./types.js";
+
+import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Initialize Firebase Admin
-// In this environment, we assume default credentials or project ID is enough if running in the same cloud project
-admin.initializeApp({
-  projectId: "gen-lang-client-0893574157",
-});
+const projectId = firebaseConfig.projectId;
+console.log(`[Server] Initializing Firebase Admin with Project ID: ${projectId}`);
+console.log(`[Server] Configured Database ID: ${(firebaseConfig as any).firestoreDatabaseId}`);
 
-const db = admin.firestore();
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: projectId
+  });
+}
+
+// Initialize Firestore with fallback logic
+let firestoreInstance: admin.firestore.Firestore;
+const configDbId = (firebaseConfig as any).firestoreDatabaseId;
+let useDefaultFallback = false;
+
+function getDb(forceDefault = false) {
+  if (useDefaultFallback || forceDefault) return getFirestore();
+  if (configDbId && configDbId !== "(default)") {
+    return getFirestore(configDbId);
+  }
+  return getFirestore();
+}
+
+// Initial check
+const initialDb = getDb();
+if (configDbId && configDbId !== "(default)") {
+  initialDb.collection('test').doc('connection').get().then(() => {
+    console.log(`[Server] Firestore connection verified for database: ${configDbId}`);
+  }).catch((error: any) => {
+    const isNotFoundError = error.code === 5 || (error.message && error.message.includes('NOT_FOUND'));
+    const isPermissionError = error.code === 7 || (error.message && error.message.includes('PERMISSION_DENIED'));
+    
+    if (isNotFoundError || isPermissionError) {
+      console.warn(`[Server] ${isNotFoundError ? 'NOT_FOUND' : 'PERMISSION_DENIED'} on database ${configDbId}, switching to default database for all future requests`);
+      useDefaultFallback = true;
+    } else {
+      console.error(`[Server] Firestore connection test failed for ${configDbId}:`, error.message);
+    }
+  });
+}
+
+// Proxy-like access to db
+const db = {
+  collection: (path: string) => getDb().collection(path),
+  doc: (path: string) => getDb().doc(path),
+  runTransaction: (updateFunction: (transaction: admin.firestore.Transaction) => Promise<any>) => getDb().runTransaction(updateFunction),
+  batch: () => getDb().batch(),
+  getAll: (...args: any[]) => (getDb() as any).getAll(...args),
+  recursiveDelete: (ref: any) => (getDb() as any).recursiveDelete(ref),
+  bulkWriter: () => (getDb() as any).bulkWriter(),
+  terminate: () => getDb().terminate(),
+  listCollections: () => getDb().listCollections(),
+} as unknown as admin.firestore.Firestore;
 
 async function startServer() {
   const app = express();
@@ -30,7 +80,26 @@ async function startServer() {
       if (!userId) return res.status(400).json({ error: "Missing userId" });
 
       const userRef = db.collection("users").doc(userId);
-      const userSnap = await userRef.get();
+      let userSnap;
+      try {
+        userSnap = await userRef.get();
+      } catch (dbError: any) {
+        const isNotFoundError = dbError.code === 5 || (dbError.message && dbError.message.includes('NOT_FOUND'));
+        const isPermissionError = dbError.code === 7 || (dbError.message && dbError.message.includes('PERMISSION_DENIED'));
+        
+        if (isNotFoundError || isPermissionError) {
+          console.warn(`[Auth] Retrying with default database due to ${isNotFoundError ? 'NOT_FOUND' : 'PERMISSION_DENIED'}`);
+          userSnap = await getFirestore().collection("users").doc(userId).get();
+          useDefaultFallback = true; // Switch globally
+        } else {
+          console.error(`[Auth] Firestore read error for user ${userId}:`, dbError);
+          return res.status(500).json({ 
+            error: "Database access error", 
+            message: dbError.message,
+            code: dbError.code
+          });
+        }
+      }
 
       const STARTER_AMOUNT = 500;
 
@@ -75,6 +144,7 @@ async function startServer() {
   app.post("/api/ai/execute", async (req, res) => {
     try {
       const { actionType, payload, userId } = req.body;
+      console.log(`[Gatekeeper] Request: actionType=${actionType}, userId=${userId}`);
 
       if (!userId) {
         return res.status(401).json({ error: "Unauthorized: Missing User ID" });
@@ -85,8 +155,30 @@ async function startServer() {
       }
 
       // Fetch user data and AI settings
+      console.log(`[Gatekeeper] Fetching user doc: users/${userId}`);
       const userRef = db.collection("users").doc(userId);
-      const userSnap = await userRef.get();
+      let userSnap;
+      try {
+        userSnap = await userRef.get();
+        console.log(`[Gatekeeper] User doc fetched. Exists: ${userSnap.exists}`);
+      } catch (dbError: any) {
+        const isNotFoundError = dbError.code === 5 || (dbError.message && dbError.message.includes('NOT_FOUND'));
+        const isPermissionError = dbError.code === 7 || (dbError.message && dbError.message.includes('PERMISSION_DENIED'));
+        
+        if (isNotFoundError || isPermissionError) {
+          console.warn(`[Gatekeeper] Retrying with default database due to ${isNotFoundError ? 'NOT_FOUND' : 'PERMISSION_DENIED'}`);
+          userSnap = await getFirestore().collection("users").doc(userId).get();
+          useDefaultFallback = true; // Switch globally
+        } else {
+          console.error("[Gatekeeper] Firestore Read Error:", dbError);
+          return res.status(500).json({ 
+            error: "Database access error", 
+            message: dbError.message,
+            code: dbError.code,
+            details: dbError.details || ""
+          });
+        }
+      }
       
       if (!userSnap.exists) {
         return res.status(404).json({ error: "User not found" });
@@ -187,12 +279,14 @@ async function startServer() {
           }
         } else {
           // Standard Text Generation
+          console.log(`Executing standard text generation for ${actionType} with model ${modelName}`);
           const response = await ai.models.generateContent({
             model: modelName,
-            contents: payload.prompt,
+            contents: [{ parts: [{ text: payload.prompt }] }],
             config: payload.config
           });
-          aiResult = response.text;
+          aiResult = response.text || "";
+          console.log(`Generation successful, result length: ${aiResult.length}`);
         }
       } catch (aiError: any) {
         console.error("Gemini API Error:", aiError);
@@ -236,7 +330,12 @@ async function startServer() {
 
     } catch (error: any) {
       console.error("Gatekeeper Error:", error);
-      res.status(500).json({ error: "Internal server error", details: error.message });
+      res.status(500).json({ 
+        error: "Internal server error", 
+        message: error.message,
+        code: error.code,
+        details: error.details || ""
+      });
     }
   });
 

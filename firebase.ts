@@ -7,8 +7,8 @@ import firebaseConfig from './firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 
 // Use named database if provided, otherwise default
-export const db = firebaseConfig.firestoreDatabaseId 
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+export const db = (firebaseConfig as any).firestoreDatabaseId 
+  ? getFirestore(app, (firebaseConfig as any).firestoreDatabaseId)
   : getFirestore(app);
 
 export const auth = getAuth(app);
@@ -19,7 +19,7 @@ export type { User };
 // Connection test with more detailed logging
 async function testConnection() {
   try {
-    console.log(`Testing Firestore connection to database: ${firebaseConfig.firestoreDatabaseId || '(default)'}...`);
+    console.log(`Testing Firestore connection to database: ${(firebaseConfig as any).firestoreDatabaseId || '(default)'}...`);
     await getDocFromServer(doc(db, 'test', 'connection'));
     console.log("Firestore connection test successful (reached server).");
   } catch (error: any) {

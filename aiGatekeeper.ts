@@ -21,7 +21,7 @@ export const callAI = async (actionType: CreditActionType, payload: AIRequestPay
             throw new Error(result.message || result.error || "AI Gatekeeper Error");
         }
 
-        return result.data; // Returns the generated content
+        return result.result; // Returns the generated content
     } catch (error: any) {
         console.error("AI Gatekeeper Error:", error.message);
         throw error;
