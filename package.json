@@ -4,11 +4,14 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "vite build",
-    "preview": "vite preview",
-    "lint": "tsc --noEmit"
-  },
+  "dev": "tsx server.ts",
+  "start": "node dist/server/server.js",
+  "build": "npm run build:frontend && npm run build:server",
+  "build:frontend": "vite build",
+  "build:server": "tsc --build tsconfig.server.json",
+  "preview": "vite preview",
+  "lint": "tsc --noEmit"
+},
   "dependencies": {
     "@google/genai": "^1.37.0",
     "@types/express": "^5.0.6",

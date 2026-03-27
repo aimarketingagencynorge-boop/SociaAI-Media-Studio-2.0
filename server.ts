@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import admin from "firebase-admin";
@@ -7,7 +8,8 @@ import { getFirestore } from "firebase-admin/firestore";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { AI_COSTS, CreditTransaction, AIAccessSettings, AISource, CreditActionType } from "./types.js";
 
-import firebaseConfig from "./firebase-applet-config.json" assert { type: "json" };
+// Load Firebase configuration
+const firebaseConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8"));
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
