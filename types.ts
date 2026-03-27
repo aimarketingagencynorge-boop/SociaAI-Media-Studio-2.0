@@ -154,6 +154,45 @@ export interface StudioGeneratedAsset {
   createdAt: string;
 }
 
+export type AISource = 'credits' | 'user_api_key';
+
+export interface AIAccessSettings {
+  creditBalance: number;
+  starterCreditsGranted: boolean;
+  activeSource: AISource;
+  hasUserApiKey: boolean;
+  updatedAt: string; // ISO string
+}
+
+export type CreditActionType =
+  | 'initial_grant'
+  | 'purchase'
+  | 'scan_brand'
+  | 'generate_post'
+  | 'generate_image'
+  | 'generate_video'
+  | 'ai_enhance';
+
+export interface CreditTransaction {
+  id?: string;
+  userId: string;
+  amount: number;
+  actionType: CreditActionType;
+  source: 'starter' | 'purchased' | 'usage';
+  description?: string;
+  createdAt: string; // ISO string
+}
+
+export const AI_COSTS: Record<CreditActionType, number> = {
+  'initial_grant': 0,
+  'purchase': 0,
+  'scan_brand': 50,
+  'generate_post': 10,
+  'generate_image': 25,
+  'generate_video': 100,
+  'ai_enhance': 5,
+};
+
 export interface UserState {
   credits: number;
   language: Language;
@@ -167,6 +206,8 @@ export interface UserState {
   integrations: UserIntegration[];
   workspaceId: string;
   userId: string;
+  aiSettings: AIAccessSettings | null;
+  isLoadingAICredits: boolean;
 }
 
 export type IntegrationType = 'zapier' | 'webhook' | 'custom';

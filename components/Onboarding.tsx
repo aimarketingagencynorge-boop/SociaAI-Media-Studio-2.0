@@ -70,7 +70,7 @@ const Onboarding: React.FC = () => {
     setLogs(prev => [...prev, { msg: `> [${type.toUpperCase()}]: ${msg}`, type }]);
   };
 
-  const [manualKey, setManualKey] = useState(gemini.getStoredApiKey() || '');
+  const [manualKey, setManualKey] = useState(useStore.getState().geminiApiKey || '');
   const [showManualAuth, setShowManualAuth] = useState(!window.aistudio);
 
   const handleOpenAuth = async () => {
@@ -87,7 +87,7 @@ const Onboarding: React.FC = () => {
         addLog("MANUAL_AUTH_REQUIRED: Please enter your Gemini API Key.", "warn");
         return;
       }
-      gemini.setApiKey(manualKey);
+      await useStore.getState().saveUserApiKey(manualKey);
       setAuthRequired(false);
       addLog("Manual Neural Link established. Retrying scan operations...");
       handleScan(true);
@@ -100,7 +100,7 @@ const Onboarding: React.FC = () => {
     // Proactive check for API key selection
     // If force is true, we skip the check to mitigate race conditions after openSelectKey
     const hasAistudioKey = window.aistudio ? await window.aistudio.hasSelectedApiKey() : false;
-    const hasManualKey = !!localStorage.getItem('GEMINI_API_KEY');
+    const hasManualKey = !!useStore.getState().geminiApiKey;
 
     if (!force && !hasAistudioKey && !hasManualKey) {
       addLog("AUTH_REQUIRED: No API key detected. Please select or enter one.", "warn");
@@ -158,7 +158,6 @@ const Onboarding: React.FC = () => {
       if (isAuthError) {
         addLog(`Cause: AUTH_FAILURE. Re-authentication with Neural Link (API Key) is mandatory.`, "error");
         if (!window.aistudio) {
-          localStorage.removeItem('GEMINI_API_KEY');
           setManualKey('');
         }
         setAuthRequired(true);

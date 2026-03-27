@@ -23,7 +23,7 @@ import { useAuth } from '../AuthContext';
 import { translations } from '../i18n';
 
 const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { language, credits, activeView, setActiveView } = useStore();
+  const { language, credits, activeView, setActiveView, aiSettings, isLoadingAICredits } = useStore();
   const { user, logout } = useAuth();
   const t = translations[language];
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -74,13 +74,36 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <ShieldCheck size={10} className="text-[#34E0F7]" /> COMMAND_STATION v2.5
         </p>
         {user && (
-          <div className="mt-4 p-3 bg-white/5 rounded-xl border border-white/5 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#8C4DFF] to-[#34E0F7] flex items-center justify-center text-[10px] font-black text-white">
-              {user.displayName?.charAt(0) || user.email?.charAt(0) || 'U'}
+          <div className="mt-4 space-y-2">
+            <div className="p-3 bg-white/5 rounded-xl border border-white/5 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#8C4DFF] to-[#34E0F7] flex items-center justify-center text-[10px] font-black text-white">
+                {user.displayName?.charAt(0) || user.email?.charAt(0) || 'U'}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-[10px] font-orbitron text-white uppercase truncate">{user.displayName || 'Commander'}</p>
+                <p className="text-[8px] font-mono text-white/20 truncate">{user.email}</p>
+              </div>
             </div>
-            <div className="overflow-hidden">
-              <p className="text-[10px] font-orbitron text-white uppercase truncate">{user.displayName || 'Commander'}</p>
-              <p className="text-[8px] font-mono text-white/20 truncate">{user.email}</p>
+            
+            {/* AI Credits Balance */}
+            <div 
+              onClick={() => setActiveView('store')}
+              className="p-3 bg-gradient-to-r from-[#8C4DFF]/10 to-[#34E0F7]/10 rounded-xl border border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/10 transition-colors group"
+            >
+              <div className="flex items-center gap-2">
+                <Zap size={12} className="text-[#34E0F7] group-hover:scale-110 transition-transform" />
+                <span className="text-[9px] font-mono text-white/60 uppercase tracking-wider">AI FUEL</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {isLoadingAICredits ? (
+                  <div className="w-8 h-3 bg-white/10 animate-pulse rounded" />
+                ) : (
+                  <span className="text-[11px] font-orbitron font-bold text-white">
+                    {aiSettings?.creditBalance || 0}
+                  </span>
+                )}
+                <span className="text-[8px] font-mono text-white/30">CR</span>
+              </div>
             </div>
           </div>
         )}

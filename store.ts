@@ -1,7 +1,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
-import { UserState, Language, BrandData, SocialPost, BrandAsset, MediaAsset, StudioGeneratedAsset, UserIntegration, OutboundEventPayload, BrandReferenceImage, ReferenceSettings } from './types';
+import { UserState, Language, BrandData, SocialPost, BrandAsset, MediaAsset, StudioGeneratedAsset, UserIntegration, OutboundEventPayload, BrandReferenceImage, ReferenceSettings, AIAccessSettings, AISource } from './types';
 import { db, auth, OperationType, handleFirestoreError } from './firebase';
 import { doc, onSnapshot, setDoc, updateDoc, collection } from 'firebase/firestore';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -18,6 +18,10 @@ interface StoreActions {
   setAuthenticated: (status: boolean) => void;
   setFirebaseUser: (user: User | null) => void;
   setGeminiApiKey: (key: string) => void;
+  setAiSettings: (settings: AIAccessSettings | null) => void;
+  setIsLoadingAICredits: (loading: boolean) => void;
+  setActiveAISource: (source: AISource) => Promise<void>;
+  saveUserApiKey: (key: string) => Promise<void>;
   setWeeklyPlan: (posts: SocialPost[]) => void;
   addPost: (post: SocialPost) => void;
   removePost: (id: string) => void;
@@ -183,6 +187,8 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       isAuthenticated: false,
       firebaseUser: null,
       geminiApiKey: '',
+      aiSettings: null,
+      isLoadingAICredits: false,
       activeView: 'dashboard',
       videoCount: 0,
       isHyperspaceActive: false,
@@ -245,6 +251,25 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       },
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
       setFirebaseUser: (firebaseUser) => set({ firebaseUser }),
+      setAiSettings: (aiSettings) => set({ aiSettings }),
+      setIsLoadingAICredits: (isLoadingAICredits) => set({ isLoadingAICredits }),
+      setActiveAISource: async (source) => {
+        const state = get();
+        if (state.firebaseUser) {
+          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          await setDoc(userDocRef, { aiSettings: { ...state.aiSettings, activeSource: source } }, { merge: true });
+        }
+      },
+      saveUserApiKey: async (key) => {
+        const state = get();
+        if (state.firebaseUser) {
+          const userDocRef = doc(db, 'users', state.firebaseUser.uid);
+          await setDoc(userDocRef, { 
+            geminiApiKey: key, 
+            aiSettings: { ...state.aiSettings, hasUserApiKey: true, activeSource: 'user_api_key' } 
+          }, { merge: true });
+        }
+      },
       setGeminiApiKey: (geminiApiKey) => {
         set({ geminiApiKey });
         // Sync with Firebase if authenticated

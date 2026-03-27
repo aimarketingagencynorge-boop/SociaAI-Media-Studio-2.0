@@ -1,7 +1,6 @@
-
-import { GoogleGenAI, Type } from "@google/genai";
-import { BrandData, SocialPost, Language, PlatformDNA, Platform } from "./types";
+import { BrandData, SocialPost, Language, PlatformDNA, Platform, CreditActionType } from "./types";
 import { useStore } from "./store";
+import { callAI } from "./aiGatekeeper";
 
 export interface CampaignContext {
   platform: Platform;
@@ -55,7 +54,6 @@ export class GeminiService {
   public buildFinalContent(baseContent: string, brand: BrandData): string {
     if (!brand) return baseContent;
     const signature = this.getSignature(brand);
-    // Remove existing signature if present (anything after ---)
     const cleanContent = baseContent.split('\n\n---\n')[0];
     return cleanContent + signature;
   }
@@ -131,53 +129,15 @@ export class GeminiService {
     `;
   }
 
-  private manualApiKey: string | null = localStorage.getItem('GEMINI_API_KEY');
-
-  setApiKey(key: string) {
-    this.manualApiKey = key;
-    localStorage.setItem('GEMINI_API_KEY', key);
-  }
-
-  getStoredApiKey(): string | null {
-    return this.manualApiKey;
-  }
-
-  private getAiInstance() {
-    // Access API key from various possible locations in a Vite environment
-    const storeKey = useStore.getState().geminiApiKey;
-    const apiKey = storeKey ||
-                   this.manualApiKey ||
-                   (process.env as any)?.GEMINI_API_KEY ||
-                   (process.env as any)?.API_KEY || 
-                   (import.meta as any).env?.VITE_API_KEY ||
-                   (window as any).API_KEY ||
-                   (window as any).process?.env?.API_KEY;
+  private async callGatekeeper(actionType: CreditActionType, prompt: string, model: string = 'gemini-3-flash-preview', config?: any): Promise<string> {
+    const userId = useStore.getState().userId;
+    if (!userId) throw new Error("User not authenticated");
     
-    if (!apiKey) {
-      // If we are in the browser and have access to aistudio helper
-      if (typeof window !== 'undefined' && (window as any).aistudio) {
-        (window as any).aistudio.openSelectKey();
-      }
-      
-      console.error("GeminiService: API_KEY not found in any expected location.");
-      throw new Error("AUTH_KEY_MISSING: The system could not find a valid API Key. Please select your API key in the settings.");
-    }
-    return new GoogleGenAI({ apiKey });
-  }
-
-  private async handleApiError(error: any) {
-    const errorMsg = error?.message || String(error);
-    if (errorMsg.includes("Requested entity was not found") || errorMsg.includes("API_KEY_INVALID")) {
-      if (typeof window !== 'undefined' && (window as any).aistudio) {
-        await (window as any).aistudio.openSelectKey();
-      }
-    }
-    throw error;
+    return await callAI(actionType, { prompt, model, config }, userId);
   }
 
   public buildCampaignContext(post: Partial<SocialPost>, brand: BrandData): CampaignContext {
     if (!brand) {
-      // Return a minimal context if brand is missing
       return {
         platform: post.platform || 'instagram',
         topic: post.topic || '',
@@ -203,7 +163,6 @@ export class GeminiService {
   }
 
   async generateImagePromptFromPost(context: CampaignContext): Promise<string> {
-    const ai = this.getAiInstance();
     const brandContext = this.getBrandContextPrompt(context.brand, context.language);
     
     const promptText = `
@@ -228,39 +187,10 @@ export class GeminiService {
       Return ONLY the prompt string.
     `;
 
-    const parts: any[] = [{ text: promptText }];
-
-    // Include actual reference images if available to help the AI "see" the style
-    const referenceImages = context.brand.referenceImages || [];
-    if (context.brand.referenceSettings?.useInGeneration && referenceImages.length > 0) {
-      const primaryRefs = referenceImages
-        .filter(img => img.priority === 'primary')
-        .slice(0, 3);
-      
-      for (const img of primaryRefs) {
-        if (img.imageUrl.startsWith('data:image')) {
-          parts.push({
-            inlineData: {
-              data: img.imageUrl.split(',')[1],
-              mimeType: "image/png"
-            }
-          });
-        }
-      }
-    }
-
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview', // Using Flash for better visual understanding
-        contents: { parts }
-      });
-
-      return response.text || `Professional cinematic photo for ${context.brand.name} about ${context.topic}`;
+      return await this.callGatekeeper('ai_enhance', promptText);
     } catch (e: any) {
       console.error("Image prompt generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       return `Professional cinematic photo for ${context.brand.name} about ${context.topic}`;
     }
   }
@@ -270,11 +200,9 @@ export class GeminiService {
       if (!brand && !context?.brand) {
         return `https://loremflickr.com/800/800/business?random=${Math.random()}`;
       }
-      const ai = this.getAiInstance();
+      
       let finalPrompt = prompt;
-
       if (context) {
-        // If context is provided, we use it to enrich the prompt if it's too simple
         if (prompt.length < 50) {
           finalPrompt = await this.generateImagePromptFromPost(context);
         }
@@ -282,154 +210,82 @@ export class GeminiService {
         finalPrompt = `Professional cinematic photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. High resolution, no text.`;
       }
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
-        contents: { parts: [{ text: finalPrompt }] },
-        config: { 
-          imageConfig: { 
-            aspectRatio: context?.platform === 'tiktok' ? "9:16" : context?.platform === 'instagram' ? "1:1" : "16:9",
-          } 
-        }
-      });
+      const userId = useStore.getState().userId;
+      const result = await callAI('generate_image', { 
+        prompt: finalPrompt, 
+        model: 'gemini-2.5-flash-image' 
+      }, userId);
 
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-      }
+      return result;
     } catch (e: any) {
       console.error("Image generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
     }
     return `https://loremflickr.com/800/800/${brand.industry.split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
 
   async scanWebsite(url: string, targetLanguage: Language) {
-    const ai = this.getAiInstance();
     const langName = this.getLanguageName(targetLanguage);
     
     let intelligence = "";
-    let sources: string[] = [];
-
     try {
-      const searchResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Audit this business website: ${url.trim()}. 
+      const prompt = `Audit this business website: ${url.trim()}. 
         Extract: official name, detailed description of services/products, industry, core mission, and brand colors.
-        Report must be in ${langName}.`,
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
+        Report must be in ${langName}.`;
+      
+      intelligence = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+        tools: [{ googleSearch: {} }]
       });
-
-      intelligence = searchResponse.text || "";
-      const groundingChunks = searchResponse.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      sources = groundingChunks.map((chunk: any) => chunk.web?.uri).filter(Boolean);
     } catch (searchError: any) {
       console.warn("Search grounding failed, falling back to direct analysis", searchError);
-      if (searchError.message?.includes("Requested entity was not found") || searchError.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(searchError);
-      }
-      // Fallback: Try without search tools if search fails (might be a key restriction)
-      const fallbackResponse = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `Analyze this business URL: ${url.trim()}. 
+      const fallbackPrompt = `Analyze this business URL: ${url.trim()}. 
         Based on the URL name and common knowledge, describe the business, industry, and mission.
-        Report must be in ${langName}.`,
-      });
-      intelligence = fallbackResponse.text || "";
+        Report must be in ${langName}.`;
+      intelligence = await this.callGatekeeper('ai_enhance', fallbackPrompt);
     }
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview', // Using Flash for faster mapping and better schema compliance
-        contents: `Based on this intelligence: "${intelligence}", create a structured Brand DNA JSON.
+      const dnaPrompt = `Based on this intelligence: "${intelligence}", create a structured Brand DNA JSON.
         URL: ${url}.
-        Language: ${langName}.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              description: { type: Type.STRING },
-              industry: { type: Type.STRING },
-              colors: { 
-                type: Type.ARRAY, 
-                items: { 
-                  type: Type.OBJECT, 
-                  properties: { name: { type: Type.STRING }, hex: { type: Type.STRING } } 
-                } 
-              },
-              toneOfVoice: { type: Type.STRING },
-              toneConfidence: { type: Type.NUMBER }
-            },
-            required: ["name", "description", "industry", "colors", "toneOfVoice", "toneConfidence"]
-          }
-        }
+        Language: ${langName}.`;
+
+      const responseText = await this.callGatekeeper('ai_enhance', dnaPrompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const cleaned = this.cleanJsonResponse(response.text || '{}');
+      const cleaned = this.cleanJsonResponse(responseText || '{}');
       return {
         data: JSON.parse(cleaned),
-        sources: sources
+        sources: []
       };
     } catch (e: any) {
       console.error("DNA Mapping Error", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw new Error("Neural link failed to decode brand DNA. Try again.");
     }
   }
 
   async refineBrandDNA(brand: BrandData, prompt: string, targetLanguage: Language) {
-    const ai = this.getAiInstance();
     const langName = this.getLanguageName(targetLanguage);
     const context = this.getBrandContextPrompt(brand, targetLanguage);
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `${context} Refine the following Brand DNA based on this request: "${prompt}". 
+      const refinePrompt = `${context} Refine the following Brand DNA based on this request: "${prompt}". 
         Current Brand Data: ${JSON.stringify(brand)}.
         Language: ${langName}.
-        Return a complete updated Brand DNA JSON object.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              description: { type: Type.STRING },
-              industry: { type: Type.STRING },
-              usp: { type: Type.STRING },
-              toneOfVoice: { type: Type.STRING },
-              voiceProfile: { type: Type.STRING },
-              coreMission: { type: Type.STRING },
-              whatWeDo: { type: Type.STRING },
-              howWeDoIt: { type: Type.STRING },
-              brandPerception: { type: Type.STRING },
-              pillars: { type: Type.ARRAY, items: { type: Type.STRING } },
-              humanTouch: { type: Type.STRING }
-            }
-          }
-        }
+        Return a complete updated Brand DNA JSON object.`;
+
+      const responseText = await this.callGatekeeper('ai_enhance', refinePrompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const cleaned = this.cleanJsonResponse(response.text || '{}');
+      const cleaned = this.cleanJsonResponse(responseText || '{}');
       return JSON.parse(cleaned);
     } catch (e: any) {
       console.error("Brand DNA Refinement Error", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw new Error("Failed to refine brand DNA.");
     }
   }
 
   async generateSocialPost(topic: string, platform: Platform, brand: BrandData, targetLanguage: Language) {
-    const ai = this.getAiInstance();
     const contextPrompt = this.getBrandContextPrompt(brand, targetLanguage);
     const langName = this.getLanguageName(targetLanguage);
     const platformDNA = brand.platformDNA?.[platform];
@@ -444,28 +300,16 @@ export class GeminiService {
     ` : '';
     
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post about: ${topic}. 
+      const prompt = `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post about: ${topic}. 
         Language: ${langName}. 
         Ensure the content matches the platform's focus and goal.
-        Return JSON format.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              content: { type: Type.STRING },
-              hook: { type: Type.STRING },
-              hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
-              imageBrief: { type: Type.STRING }
-            },
-            required: ["content", "hook", "hashtags", "imageBrief"]
-          }
-        }
+        Return JSON format.`;
+
+      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
       const campaignContext = this.buildCampaignContext({ ...data, platform }, brand);
       const imageUrl = await this.generateImage(data.imageBrief, brand, campaignContext);
       return {
@@ -475,120 +319,74 @@ export class GeminiService {
       };
     } catch (e: any) {
       console.error("Social post generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw e;
     }
   }
 
   async enhanceImage(base64Image: string, prompt: string, brand: BrandData): Promise<string> {
     try {
-      const ai = this.getAiInstance();
       const brandPrompt = `Enhance this image for ${brand.name}. Command: ${prompt}. Style: ${brand.voiceProfile}. High quality marketing visual. Return the enhanced image.`;
-
-      const response = await ai.models.generateContent({
+      
+      const userId = useStore.getState().userId;
+      const result = await callAI('generate_image', {
+        prompt: brandPrompt,
         model: 'gemini-2.5-flash-image',
-        contents: {
-          parts: [
-            { inlineData: { data: base64Image.split(',')[1], mimeType: "image/png" } },
-            { text: brandPrompt }
-          ]
-        },
-        config: {
-          imageConfig: {
-          }
-        }
-      });
+        image: base64Image
+      }, userId);
 
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-      }
+      return result;
     } catch (e: any) {
       console.error("Image enhancement failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
     }
     return base64Image;
   }
 
   async generateThumbnail(videoDescription: string, brand: BrandData, targetLanguage: Language): Promise<{ url: string; hook: string }> {
-    const ai = this.getAiInstance();
     const langName = this.getLanguageName(targetLanguage);
     const contextPrompt = this.getBrandContextPrompt(brand, targetLanguage);
     const platformContext = this.getPlatformContextPrompt('youtube', brand);
     
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `${contextPrompt} ${platformContext} Create a high-impact thumbnail brief for a video described as: "${videoDescription}". Language: ${langName}. JSON format with 'imageBrief' and 'hookText'.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              imageBrief: { type: Type.STRING },
-              hookText: { type: Type.STRING }
-            },
-            required: ["imageBrief", "hookText"]
-          }
-        }
+      const prompt = `${contextPrompt} ${platformContext} Create a high-impact thumbnail brief for a video described as: "${videoDescription}". Language: ${langName}. JSON format with 'imageBrief' and 'hookText'.`;
+      
+      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
       const campaignContext = this.buildCampaignContext({ topic: videoDescription, hook: data.hookText, platform: 'youtube' }, brand);
       const url = await this.generateImage(data.imageBrief, brand, campaignContext);
       return { url, hook: data.hookText };
     } catch (e: any) {
       console.error("Thumbnail generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw e;
     }
   }
 
   async draftPostFromMedia(mediaType: 'image' | 'video', mediaDescription: string, platform: Platform, brand: BrandData, targetLanguage: Language) {
-    const ai = this.getAiInstance();
     const contextPrompt = this.getBrandContextPrompt(brand, targetLanguage);
     const platformContext = this.getPlatformContextPrompt(platform, brand);
     const langName = this.getLanguageName(targetLanguage);
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post for this ${mediaType}: "${mediaDescription}". Language: ${langName}. JSON format.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              content: { type: Type.STRING },
-              hook: { type: Type.STRING },
-              hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }
-            },
-            required: ["content", "hook", "hashtags"]
-          }
-        }
+      const prompt = `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post for this ${mediaType}: "${mediaDescription}". Language: ${langName}. JSON format.`;
+      
+      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
       return {
         ...data,
         content: this.buildFinalContent(data.content, brand)
       };
     } catch (e: any) {
       console.error("Post from media generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw e;
     }
   }
 
   async generateWeeklyPlan(brand: BrandData, targetLanguage: Language, weekIndex: number = 0): Promise<SocialPost[]> {
-    const ai = this.getAiInstance();
     const contextPrompt = this.getBrandContextPrompt(brand, targetLanguage);
     const langName = this.getLanguageName(targetLanguage);
     
@@ -601,38 +399,20 @@ export class GeminiService {
       `).join('\n');
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview', // Upgraded for better planning
-        contents: `${contextPrompt} 
+      const prompt = `${contextPrompt} 
         --- PLATFORM STRATEGIES ---
         ${allPlatformsContext}
         ---------------------------
         Create a 7-day social media plan with a mix of platforms (facebook, instagram, linkedin, tiktok). 
         Language: ${langName}. 
         Ensure each post follows the specific platform strategy.
-        Return as a JSON array.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                dayIndex: { type: Type.INTEGER },
-                platform: { type: Type.STRING },
-                topic: { type: Type.STRING },
-                hook: { type: Type.STRING },
-                content: { type: Type.STRING },
-                hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                imageBrief: { type: Type.STRING }
-              },
-              required: ["dayIndex", "platform", "topic", "hook", "content", "hashtags", "imageBrief"]
-            }
-          }
-        }
+        Return as a JSON array.`;
+
+      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const data = JSON.parse(this.cleanJsonResponse(response.text || '[]'));
+      const data = JSON.parse(this.cleanJsonResponse(responseText || '[]'));
       return await Promise.all(data.map(async (item: any) => {
         const campaignContext = this.buildCampaignContext(item, brand);
         return {
@@ -649,74 +429,48 @@ export class GeminiService {
       }));
     } catch (e: any) {
       console.error("Weekly plan generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw e;
     }
   }
 
   async refineText(post: SocialPost, refinePrompt: string, brand: BrandData, targetLanguage: Language) {
-    const ai = this.getAiInstance();
     const contextPrompt = this.getBrandContextPrompt(brand, targetLanguage);
     const platformContext = this.getPlatformContextPrompt(post.platform, brand);
     const langName = this.getLanguageName(targetLanguage);
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `${contextPrompt} ${platformContext} Refine post CAPTION/CONTENT ONLY. DO NOT change the image hook or the image itself. 
+      const prompt = `${contextPrompt} ${platformContext} Refine post CAPTION/CONTENT ONLY. DO NOT change the image hook or the image itself. 
         Command: "${refinePrompt}". 
         Original Topic: ${post.topic}. 
         Language: ${langName}. 
-        Return JSON with 'content' field only.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              content: { type: Type.STRING }
-            },
-            required: ["content"]
-          }
-        }
+        Return JSON with 'content' field only.`;
+
+      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
       return {
         content: this.buildFinalContent(data.content, brand)
       };
     } catch (e: any) {
       console.error("Text refinement failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw e;
     }
   }
 
   async refineImage(post: SocialPost, refinePrompt: string, brand: BrandData) {
-    const ai = this.getAiInstance();
     const contextPrompt = this.getBrandContextPrompt(brand, brand.contentLanguage);
     const platformContext = this.getPlatformContextPrompt(post.platform, brand);
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `${contextPrompt} ${platformContext} Refine post IMAGE BRIEF ONLY: "${refinePrompt}". Original: ${post.topic}. JSON.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              imageBrief: { type: Type.STRING }
-            },
-            required: ["imageBrief"]
-          }
-        }
+      const prompt = `${contextPrompt} ${platformContext} Refine post IMAGE BRIEF ONLY: "${refinePrompt}". Original: ${post.topic}. JSON.`;
+      
+      const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+        responseMimeType: "application/json"
       });
 
-      const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+      const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
       const campaignContext = this.buildCampaignContext(post, brand);
       const imageUrl = await this.generateImage(data.imageBrief, brand, campaignContext);
       return {
@@ -725,37 +479,22 @@ export class GeminiService {
       };
     } catch (e: any) {
       console.error("Image refinement failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
       throw e;
     }
   }
 
   async refineContent(post: SocialPost, refinePrompt: string, brand: BrandData, targetLanguage: Language) {
-    const ai = this.getAiInstance();
     const contextPrompt = this.getBrandContextPrompt(brand, targetLanguage);
     const platformContext = this.getPlatformContextPrompt(post.platform, brand);
     const langName = this.getLanguageName(targetLanguage);
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `${contextPrompt} ${platformContext} Refine post: "${refinePrompt}". Original: ${post.topic}. Language: ${langName}. JSON.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            content: { type: Type.STRING },
-            hook: { type: Type.STRING },
-            imageBrief: { type: Type.STRING }
-          },
-          required: ["content", "hook", "imageBrief"]
-        }
-      }
+    const prompt = `${contextPrompt} ${platformContext} Refine post: "${refinePrompt}". Original: ${post.topic}. Language: ${langName}. JSON.`;
+    
+    const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
+      responseMimeType: "application/json"
     });
 
-    const data = JSON.parse(this.cleanJsonResponse(response.text || '{}'));
+    const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
     const campaignContext = this.buildCampaignContext({ ...data, platform: post.platform }, brand);
     return {
       ...data,
@@ -773,7 +512,6 @@ export class GeminiService {
     sourceImageUrl?: string
   ): Promise<string> {
     try {
-      const ai = this.getAiInstance();
       let finalPrompt = prompt;
       
       if (useBrandDNA) {
@@ -781,37 +519,21 @@ export class GeminiService {
         finalPrompt = await this.generateImagePromptFromPost(context);
       }
 
-      const contents: any = {
-        parts: [{ text: finalPrompt }]
-      };
-
-      if (mode === 'image-to-image' && sourceImageUrl) {
-        contents.parts.unshift({
-          inlineData: {
-            data: sourceImageUrl.split(',')[1],
-            mimeType: "image/png"
-          }
-        });
-      }
-
-      const response = await ai.models.generateContent({
+      const userId = useStore.getState().userId;
+      const result = await callAI('generate_image', {
+        prompt: finalPrompt,
         model: 'gemini-2.5-flash-image',
-        contents,
+        image: mode === 'image-to-image' ? sourceImageUrl : undefined,
         config: {
           imageConfig: {
             aspectRatio: platform === 'instagram' ? "1:1" : platform === 'tiktok' ? "9:16" : "16:9",
           }
         }
-      });
+      }, userId);
 
-      for (const part of response.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-      }
+      return result;
     } catch (e: any) {
       console.error("Studio image generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
     }
     return `https://loremflickr.com/1080/1080/${brand.industry.split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
@@ -825,7 +547,6 @@ export class GeminiService {
     sourceImageUrl?: string
   ): Promise<string> {
     try {
-      const ai = this.getAiInstance();
       let finalPrompt = prompt;
       
       if (useBrandDNA) {
@@ -833,45 +554,21 @@ export class GeminiService {
         finalPrompt = await this.generateImagePromptFromPost(context);
       }
 
-      const videoConfig: any = {
-        model: 'veo-3.1-fast-generate-preview',
+      const userId = useStore.getState().userId;
+      const result = await callAI('generate_video', {
         prompt: finalPrompt,
+        model: 'veo-3.1-fast-generate-preview',
+        image: mode === 'image-to-video' ? sourceImageUrl : undefined,
         config: {
           numberOfVideos: 1,
           resolution: '720p',
           aspectRatio: platform === 'tiktok' || platform === 'instagram' ? '9:16' : '16:9'
         }
-      };
+      }, userId);
 
-      if (mode === 'image-to-video' && sourceImageUrl) {
-        videoConfig.image = {
-          imageBytes: sourceImageUrl.split(',')[1],
-          mimeType: 'image/png'
-        };
-      }
-
-      let operation = await ai.models.generateVideos(videoConfig);
-
-      while (!operation.done) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        operation = await ai.operations.getVideosOperation({ operation });
-      }
-
-      const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-      if (downloadLink) {
-        const apiKey = (ai as any).apiKey;
-        const response = await fetch(downloadLink, {
-          method: 'GET',
-          headers: { 'x-goog-api-key': apiKey },
-        });
-        const blob = await response.blob();
-        return URL.createObjectURL(blob);
-      }
+      return result;
     } catch (e: any) {
       console.error("Studio video generation failed", e);
-      if (e.message?.includes("Requested entity was not found") || e.message?.includes("API_KEY_INVALID")) {
-        await this.handleApiError(e);
-      }
     }
     return "https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-background-with-blue-lines-41344-large.mp4";
   }

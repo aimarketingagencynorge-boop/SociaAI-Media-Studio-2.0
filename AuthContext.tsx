@@ -25,16 +25,24 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const { setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage, setOnboardingStep, setUserId } = useStore();
+  const { setAuthenticated, setFirebaseUser, setGeminiApiKey, updateBrand, setLanguage, setOnboardingStep, setUserId, setAiSettings, setIsLoadingAICredits } = useStore();
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       setFirebaseUser(user);
       setAuthenticated(!!user);
-      if (user) setUserId(user.uid);
-
       if (user) {
+        setUserId(user.uid);
+        
+        // Initialize user on backend (grant credits if needed)
+        fetch('/api/auth/init', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: user.uid, email: user.email })
+        }).catch(err => console.error("Failed to init user credits:", err));
+
+        setIsLoadingAICredits(true);
         // Sync data from Firestore
         const userDocRef = doc(db, 'users', user.uid);
         const unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
@@ -44,14 +52,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (data.brand) updateBrand(data.brand);
             if (data.language) setLanguage(data.language);
             if (typeof data.onboardingStep === 'number') setOnboardingStep(data.onboardingStep);
+            if (data.aiSettings) setAiSettings(data.aiSettings);
           }
+          setIsLoadingAICredits(false);
+          setLoading(false);
         }, (error) => {
           handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
+          setIsLoadingAICredits(false);
+          setLoading(false);
         });
 
-        setLoading(false);
         return () => unsubscribeFirestore();
       } else {
+        setAiSettings(null);
+        setIsLoadingAICredits(false);
         setLoading(false);
       }
     });
