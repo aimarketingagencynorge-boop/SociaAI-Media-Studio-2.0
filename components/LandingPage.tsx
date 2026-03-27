@@ -10,7 +10,7 @@ import { signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const LandingPage: React.FC = () => {
-  const { language, setLanguage, setAuthenticated, setOnboardingStep, credits, brand, resetMission, setFirebaseUser, updateBrand } = useStore();
+  const { language, setLanguage, setAuthenticated, setOnboardingStep, credits, brand, resetMission, setFirebaseUser, updateBrand, setIsStarted } = useStore();
   const t = translations[language];
   const [showContinueDialog, setShowContinueDialog] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -53,6 +53,7 @@ const LandingPage: React.FC = () => {
 
       setFirebaseUser(user);
       setAuthenticated(true);
+      setIsStarted(true);
     } catch (error: any) {
       console.error("Login failed:", error);
       let msg = "Login failed. Please try again.";
@@ -98,11 +99,12 @@ const LandingPage: React.FC = () => {
   };
 
   const handleContinue = () => {
+    setIsStarted(true);
     setAuthenticated(true);
-    setOnboardingStep(0); // Go straight to dashboard
   };
 
   const handleNewMission = () => {
+    setIsStarted(true);
     resetMission();
     setAuthenticated(true);
     setOnboardingStep(1);

@@ -72,9 +72,9 @@ export interface BrandData {
   colors: BrandColor[];
   toneConfidence: number;
   logos: {
-    main?: string;
-    light?: string;
-    dark?: string;
+    main?: string | null;
+    light?: string | null;
+    dark?: string | null;
   };
   assets: BrandAsset[];
   referenceImages: BrandReferenceImage[];
@@ -205,6 +205,7 @@ export interface UserState {
   onboardingStep: number;
   brand: BrandData;
   isAuthenticated: boolean;
+  isStarted: boolean;
   posts: SocialPost[];
   mediaAssets: MediaAsset[];
   studioAssets: StudioGeneratedAsset[];

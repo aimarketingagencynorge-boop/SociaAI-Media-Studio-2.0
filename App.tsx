@@ -17,7 +17,7 @@ import Integrations from './components/Integrations';
 import { AuthProvider, useAuth } from './AuthContext';
 
 const AppContent: React.FC = () => {
-  const { isAuthenticated, onboardingStep, activeView } = useStore();
+  const { isAuthenticated, onboardingStep, activeView, isStarted } = useStore();
   const { loading } = useAuth();
 
   if (loading) {
@@ -28,7 +28,7 @@ const AppContent: React.FC = () => {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isStarted || !isAuthenticated) {
     return <LandingPage />;
   }
 

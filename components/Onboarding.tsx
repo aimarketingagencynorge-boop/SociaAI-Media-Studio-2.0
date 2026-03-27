@@ -151,7 +151,7 @@ const Onboarding: React.FC = () => {
       }
       
       updateBrand({
-        name: data.name,
+        name: data.name || 'New Brand',
         description: data.description || '',
         industry: data.industry || '',
         colors: data.colors || brand.colors,

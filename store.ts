@@ -49,6 +49,7 @@ interface StoreActions {
   updateIntegration: (id: string, updates: Partial<UserIntegration>) => void;
   toggleIntegration: (id: string) => void;
   triggerOutboundEvent: (event: Omit<OutboundEventPayload, 'userId' | 'workspaceId' | 'createdAt'>) => Promise<void>;
+  setIsStarted: (status: boolean) => void;
   activeView: AppView;
   videoCount: number;
   isHyperspaceActive: boolean;
@@ -77,9 +78,9 @@ const INITIAL_BRAND_DATA: BrandData = {
   email: '',
   ctaLink: '',
   logos: {
-    main: undefined,
-    light: undefined,
-    dark: undefined
+    main: null,
+    light: null,
+    dark: null
   },
   assets: [],
   referenceImages: [],
@@ -180,6 +181,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       language: 'PL',
       onboardingStep: 0,
       isAuthenticated: false,
+      isStarted: false,
       firebaseUser: null,
       aiSettings: null,
       isLoadingAICredits: false,
@@ -204,6 +206,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       studioAssets: [],
 
       setLanguage: (language) => set({ language }),
+      setIsStarted: (isStarted) => set({ isStarted }),
       setOnboardingStep: (onboardingStep) => {
         set({ onboardingStep });
         // Sync with Firebase if authenticated
@@ -214,15 +217,28 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         }
       },
       updateBrand: (data) => {
+        // Remove undefined values from data to prevent them from overwriting existing values with undefined
+        const cleanData = JSON.parse(JSON.stringify(data, (key, value) => {
+          if (value === undefined) return null;
+          return value;
+        }));
+
         set((state) => ({ 
-          brand: { ...(state.brand || INITIAL_BRAND_DATA), ...data } 
+          brand: { ...(state.brand || INITIAL_BRAND_DATA), ...cleanData } 
         }));
         
         // Sync with Firebase if authenticated
         const state = get();
         if (state.firebaseUser) {
           const userDocRef = doc(db, 'users', state.firebaseUser.uid);
-          setDoc(userDocRef, { brand: get().brand }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
+          
+          // Ensure we don't send undefined to Firestore (redundant but safe)
+          const brandToSync = JSON.parse(JSON.stringify(get().brand, (key, value) => {
+            if (value === undefined) return null;
+            return value;
+          }));
+
+          setDoc(userDocRef, { brand: brandToSync }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}`));
         }
       },
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
