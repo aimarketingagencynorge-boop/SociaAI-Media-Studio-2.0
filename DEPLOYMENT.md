@@ -1,38 +1,45 @@
 # Wdrożenie SociAI Studio
 
-Stan: 19 września 2026. Publiczna wersja do testów:
+Stan: 19 września 2026. Publiczna aplikacja (Stripe LIVE):
 https://sociai-studio-app-3hq6ea4cyq-uw.a.run.app
 
 Kod: gałąź `codex/sociai-launch`, PR #1. Główna gałąź nie została zmieniona.
-Obraz aplikacji zbudowano z commitu `f210d31`; późniejsze commity dotyczą skryptów wdrożenia, dokumentacji i usunięcia nieaktualnego lockfile npm.
+Kod bazowy wdrożenia: `5f8bfd1`; poprawka komunikatu anulowania: `fc613aa`.
 
 ## Infrastruktura
 
 - Google Cloud: `gen-lang-client-0893574157` (video), region `us-west1`.
-- Cloud Run: `sociai-studio-app`, rewizja `sociai-studio-app-00003-s8r`, 100% ruchu.
+- Cloud Run: `sociai-studio-app`, konfiguracja LIVE aktywowana w rewizji `sociai-studio-app-00005-srj`. Następne wydania zachowują tę konfigurację.
 - Dedykowane konto wykonawcze: `sociai-studio-runtime@gen-lang-client-0893574157.iam.gserviceaccount.com`.
 - Firestore: `ai-studio-da2c7ce8-8cbd-4a4d-a1f0-c740600206e8`; uprawnienie konta usługi ograniczone warunkiem do tej bazy.
 - Grafiki: `gen-lang-client-0893574157-sociai-media`, zapis przez serwer; reguły Storage blokują bezpośredni dostęp klienta. Wygenerowane pliki udostępnia serwer przez adresy z tokenem pobierania.
 - Sekrety Gemini, Stripe, szyfrowania i odcisków kart są w Secret Manager. Nie umieszczać ich w repozytorium ani w kodzie przeglądarki.
-- Domena Cloud Run została dodana do Firebase Authentication. Własna domena nie została podłączona.
+- Domeny Cloud Run, socialmediastudio.pl i www.socialmediastudio.pl są dozwolone w Firebase Authentication. Własność domeny zweryfikowano przez Google Search Console, mapowania Cloud Run utworzono, DNS A/AAAA/CNAME wskazuje Google. Certyfikaty HTTPS w trakcie wystawiania przy ostatniej kontroli; APP_URL pozostaje na działającym adresie Cloud Run do potwierdzenia HTTPS.
 - Poprzednia usługa `sociai-media-studio` pozostała bez zmian.
 
-## Rozliczenia — wyłącznie tryb testowy
+## Rozliczenia — Stripe LIVE
 
-Oferta aplikacji: 7 dni i maksymalnie 500 FC gratis dla uprawnionej karty, następnie 49 zł/miesiąc za 500 FC. Karta wykorzystana wcześniej rozpoczyna płatny okres zgodnie z zaakceptowaną ofertą. Wyczerpanie kredytów samo nie przyspiesza pobrania opłaty.
+Oferta: 7 dni i maksymalnie 500 FC gratis dla nowego uprawnionego konta i karty, następnie 49 zł brutto miesięcznie za 500 FC. Powtórnie użyta karta/konto rozpoczyna płatny okres dopiero po zaakceptowaniu oferty. Wyczerpanie FC nie przyspiesza opłaty.
 
-Stripe używa klucza testowego, ceny `price_1UHKXYGCTUVg4lvlywKVg2iv` i portalu `bpc_1UHKanGCTUVg4lvloyk7QvFh`. Webhook testowy `we_1UHKpEGCTUVg4lvloYQsty2J`:
-https://sociai-studio-app-3hq6ea4cyq-uw.a.run.app/api/billing/webhook
+- Konto: acct_1QYtS9GCTUVg4lvl; charges_enabled i payouts_enabled potwierdzone przez LIVE API.
+- Produkt: prod_VHveL2i5lgmXoy.
+- Cena: price_1UHLn2GCTUVg4lvlsNuohL7V (4900 PLN cents, month, inclusive).
+- Portal: bpc_1UHLn2GCTUVg4lvleBkwPBQf; anulowanie na koniec okresu, zmiana karty i faktury.
+- Webhook: we_1UHLn3GCTUVg4lvlsAdycgdJ; API 2026-08-26.dahlia, checkout.session.completed, invoice.paid, customer.subscription.updated/deleted.
+- Endpoint: https://sociai-studio-app-3hq6ea4cyq-uw.a.run.app/api/billing/webhook.
+- Sekrety klucza Stripe i podpisu webhooka: wersja 2. Wersja 1 zawiera wcześniejszą konfigurację TEST; nie zamieniać ich niezależnie od ceny i portalu.
+- LIVE używa oddzielnych kolekcji billingPrivateLive/cardTrialsLive/billingInvoicesLive.
+- Nie wykonano prawdziwego obciążenia karty. Test podpisanego nieszkodliwego zdarzenia z sekretem LIVE zwrócił 200.
 
-Prawdziwe płatności nie są uruchomione. Przed przejściem na live trzeba przetestować cały Checkout, przydzielanie kredytów, ponowne użycie karty i anulowanie, a następnie skonfigurować osobne zasoby oraz sekrety Stripe live.
+Sprzedawca: Webfabrikk Maciej Rydz, 934 291 735, Transistorfaret 2, 1396 Billingstad, Norwegia. Kontakt: aimarketingagencynorge@gmail.com. Publiczne dokumenty: /regulamin i /prywatnosc.
 
 ## Sprawdzone i pozostałe testy
 
 - Publiczna strona i warsztat: HTTP 200; `/api/health`: HTTP 200.
 - Chroniony status abonamentu bez logowania: HTTP 401.
 - Podpisany, nieszkodliwy test webhooka: HTTP 200; żądanie bez podpisu: HTTP 400.
-- TypeScript: poprawny. Lokalna seria testów: 25 testów zaliczonych i jeden timeout testu UI; samodzielne powtórzenie tego testu UI zakończyło się powodzeniem.
-- Potwierdzone w publicznej wersji po zalogowaniu użytkownika: plan postów oraz generowanie, zapis i wyświetlenie grafiki 1024 × 1024. Pełen cykl testowego abonamentu pozostaje do sprawdzenia.
+- TypeScript: poprawny. Pełny zestaw 28 testów przeszedł; dodatkowy test cancel_at przeszedł wraz z 5 pozostałymi testami webhooków.
+- Potwierdzone w publicznej wersji po zalogowaniu użytkownika: plan postów oraz generowanie, zapis i wyświetlenie grafiki 1024 × 1024. Checkout TEST, karta 4242, abonament 49 PLN, portal i anulowanie przeszły. Po poprawce nowego pola invoice.status ponowiono autentyczny invoice.paid: saldo 500 FC, drugi replay bez duplikacji. Testowy abonament kończy się 19.10.2026 (cancel_at).
 
 ### Naprawa Storage (19 września 2026)
 
