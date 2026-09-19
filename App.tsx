@@ -2,6 +2,7 @@
 import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { useStore } from './store';
 import { AuthProvider, useAuth } from './AuthContext';
+import LegalPage, { LegalLinks } from './components/LegalPage';
 
 const Workshop = lazy(() => import('./components/Workshop'));
 const QuickStart = lazy(() => import('./components/QuickStart'));
@@ -76,12 +77,14 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  if (['/regulamin', '/prywatnosc'].includes(window.location.pathname)) return <LegalPage privacy={window.location.pathname === '/prywatnosc'} />;
   if (new URLSearchParams(window.location.search).get("workshop") === "1") {
     return <Suspense fallback={<LoadingSpinner />}><Workshop onClose={() => { window.location.href = "/"; }} onStart={() => { window.location.href = "/"; }} /></Suspense>;
   }
   return (
     <AuthProvider>
       <AppContent />
+      <LegalLinks />
     </AuthProvider>
   );
 };

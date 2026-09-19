@@ -35,4 +35,10 @@ describe('Card trial and subscription policy', () => {
     const old = stripe.webhooks.generateTestHeaderString({ payload, secret, timestamp: 1 });
     expect(() => stripe.webhooks.constructEvent(payload, old, secret)).toThrow();
   });
+  it('recognizes current Stripe invoices without the removed paid boolean', () => {
+    const invoice = { status: 'paid', currency: 'pln', amount_paid: 4900, billing_reason: 'subscription_create' };
+    expect(paidCreditInvoice(invoice)).toBe(true);
+    expect(paidCreditInvoice({ ...invoice, status: 'open', paid: true })).toBe(false);
+    expect(paidCreditInvoice({ ...invoice, amount_paid: 0 })).toBe(false);
+  });
 });

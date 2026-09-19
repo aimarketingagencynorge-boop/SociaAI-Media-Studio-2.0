@@ -12,7 +12,10 @@ export function installBilling(db: Firestore) {
   const publicUrl = process.env.APP_URL;
   const enabled = !!(secret && fingerprintSecret && fingerprintSecret.length >= 32 && priceId && webhookSecret && publicUrl);
   const stripe = secret ? new Stripe(secret) : null;
-  const privateDoc = (uid: string) => db.collection('billingPrivate').doc(uid);
+  const live = /^(sk|rk)_live_/.test(secret || '');
+  const mode = live ? 'live' : 'test';
+  const collectionName = (name: string) => live ? `${name}Live` : name;
+  const privateDoc = (uid: string) => db.collection(collectionName('billingPrivate')).doc(uid);
   const walletDoc = (uid: string) => db.collection('workspaces').doc(uid);
   const requireStripe = () => {
     if (!enabled || !stripe) throw new Error('BILLING_NOT_CONFIGURED');
@@ -53,11 +56,12 @@ export function installBilling(db: Firestore) {
       const uid = req.body.userId;
       const [privateSnap, walletSnap] = await Promise.all([privateDoc(uid).get(), walletDoc(uid).get()]);
       const saved = privateSnap.data() || {}; const wallet = walletSnap.data() || {};
-      const claim = saved.cardHash ? (await db.collection('cardTrials').doc(saved.cardHash).get()).data() : undefined;
-      res.json({ configured: enabled, plan: BILLING_PLAN, hasCard: !!saved.cardHash,
+      const claim = saved.cardHash ? (await db.collection(collectionName('cardTrials')).doc(saved.cardHash).get()).data() : undefined;
+      const matchingMode = (wallet.billingMode || 'test') === mode;
+      res.json({ configured: enabled, mode, plan: BILLING_PLAN, hasCard: !!saved.cardHash,
         eligible: !!saved.cardHash && trialEligibility(!!wallet.starterCreditsGranted, claim?.ownerUid, uid, !!claim?.used),
-        subscriptionStatus: wallet.subscriptionStatus || null, accessUntil: wallet.billingAccessUntil || null,
-        cancelAtPeriodEnd: !!wallet.cancelAtPeriodEnd, trialStatus: wallet.trialStatus || null });
+        subscriptionStatus: matchingMode ? wallet.subscriptionStatus || null : null, accessUntil: matchingMode ? wallet.billingAccessUntil || null : null,
+        cancelAtPeriodEnd: matchingMode && !!wallet.cancelAtPeriodEnd, trialStatus: matchingMode ? wallet.trialStatus || null : null });
     } catch (error) { errorResponse(res, error); }
   };
 
@@ -65,7 +69,7 @@ export function installBilling(db: Firestore) {
     try {
       const api = requireStripe(); const uid = req.body.userId;
       const customer = await customerFor(uid, req.body.email);
-      const session = await api.checkout.sessions.create({ mode: 'setup', customer,
+      const session = await api.checkout.sessions.create({ mode: 'setup', locale: 'pl', customer,
         currency: 'pln', payment_method_types: ['card'], client_reference_id: uid,
         metadata: { sociaiUid: uid }, setup_intent_data: { metadata: { sociaiUid: uid } },
         custom_text: { submit: { message: 'To rejestracja karty. Abonament i termin obciążenia zaakceptujesz w kolejnym kroku. Sama rejestracja karty nie uruchamia opłaty.' } },
@@ -91,7 +95,7 @@ export function installBilling(db: Firestore) {
         if (previous.status === 'open') { res.json({ url: previous.url }); return; }
       }
       const now = new Date().toISOString();
-      const claimRef = db.collection('cardTrials').doc(saved.cardHash);
+      const claimRef = db.collection(collectionName('cardTrials')).doc(saved.cardHash);
       const counterRef = db.collection('systemCounters').doc(`starter-${now.slice(0, 10)}`);
       const operation = await db.runTransaction(async tx => {
         const [wallet, card, counter, current] = await Promise.all([tx.get(walletDoc(uid)), tx.get(claimRef), tx.get(counterRef), tx.get(privateDoc(uid))]);
@@ -109,10 +113,10 @@ export function installBilling(db: Firestore) {
         // Every expired session gets a new operation; simultaneous calls share one.
         const operationId = previous?.operationId && !previous?.checkoutId
           ? previous.operationId : crypto.randomUUID();
-        tx.set(privateDoc(uid), { operationId, checkoutId: null, acceptedPlan: BILLING_PLAN.version, acceptedAt: now }, { merge: true });
+        tx.set(privateDoc(uid), { operationId, checkoutId: null, acceptedPlan: BILLING_PLAN.version, acceptedLegalVersion: '2026-09-19', acceptedAt: now }, { merge: true });
         return { eligible, operationId };
       });
-      const session = await api.checkout.sessions.create({ mode: 'subscription', customer: saved.customerId,
+      const session = await api.checkout.sessions.create({ mode: 'subscription', locale: 'pl', customer: saved.customerId,
         client_reference_id: uid, payment_method_types: ['card'], payment_method_collection: 'always',
         line_items: [{ price: priceId!, quantity: 1 }],
         subscription_data: {
@@ -134,7 +138,7 @@ export function installBilling(db: Firestore) {
     try {
       const api = requireStripe(); const saved = (await privateDoc(req.body.userId).get()).data();
       if (!saved?.customerId) throw new Error('CARD_REQUIRED');
-      const session = await api.billingPortal.sessions.create({ customer: saved.customerId,
+      const session = await api.billingPortal.sessions.create({ customer: saved.customerId, locale: 'pl',
         ...(process.env.STRIPE_PORTAL_CONFIGURATION_ID ? { configuration: process.env.STRIPE_PORTAL_CONFIGURATION_ID } : {}),
         return_url: `${publicUrl}/?billing=return` });
       res.json({ url: session.url });
@@ -148,7 +152,7 @@ export function installBilling(db: Firestore) {
     const saved = (await privateDoc(uid).get()).data();
     if (saved?.customerId !== sub.customer) throw new Error('CUSTOMER_MISMATCH');
     const walletRef = walletDoc(uid);
-    const fields: any = { subscriptionId: sub.id, subscriptionStatus: sub.status, cancelAtPeriodEnd: !!sub.cancel_at_period_end };
+    const fields: any = { billingMode: mode, subscriptionId: sub.id, subscriptionStatus: sub.status, cancelAtPeriodEnd: !!sub.cancel_at_period_end };
     if (sub.status === 'canceled') fields.billingAccessUntil = new Date().toISOString();
     if (grantTrial && sub.status === 'trialing' && sub.metadata.trialEligible === 'true') {
       if (!sub.default_payment_method) {
@@ -163,7 +167,7 @@ export function installBilling(db: Firestore) {
         await walletRef.set({ subscriptionId: sub.id, subscriptionStatus: 'card_mismatch', billingAccessUntil: new Date().toISOString() }, { merge: true });
         return;
       }
-      const claimRef = db.collection('cardTrials').doc(hash);
+      const claimRef = db.collection(collectionName('cardTrials')).doc(hash);
       await db.runTransaction(async tx => {
         const [wallet, claim] = await Promise.all([tx.get(walletRef), tx.get(claimRef)]);
         if (wallet.data()?.starterCreditsGranted) { tx.set(walletRef, fields, { merge: true }); return; }
@@ -188,14 +192,14 @@ export function installBilling(db: Firestore) {
     const periodEnd = Math.max(...(invoice.lines?.data || []).map((line: any) => line.period?.end || 0));
     const periodStart = Math.max(...(invoice.lines?.data || []).map((line: any) => line.period?.start || 0));
     if (!periodEnd) throw new Error('INVOICE_PERIOD_MISSING');
-    const receipt = db.collection('billingInvoices').doc(invoice.id); const walletRef = walletDoc(uid);
+    const receipt = db.collection(collectionName('billingInvoices')).doc(invoice.id); const walletRef = walletDoc(uid);
     await db.runTransaction(async tx => {
       const [seen, wallet] = await Promise.all([tx.get(receipt), tx.get(walletRef)]);
       if (seen.exists) return;
       tx.set(receipt, { uid, subscriptionId: sub.id, periodStart, paidAt: new Date().toISOString() });
       // Late and replayed invoices never reset the current month's balance.
-      if ((wallet.data()?.paidPeriodStart || 0) >= periodStart) return;
-      tx.set(walletRef, { creditBalance: BILLING_PLAN.credits, activeSource: 'purchased_credits', subscriptionId: sub.id,
+      if ((wallet.data()?.billingMode || 'test') === mode && (wallet.data()?.paidPeriodStart || 0) >= periodStart) return;
+      tx.set(walletRef, { billingMode: mode, creditBalance: BILLING_PLAN.credits, activeSource: 'purchased_credits', subscriptionId: sub.id,
         subscriptionStatus: sub.status, paidPeriodStart: periodStart, trialStatus: 'completed',
         billingAccessUntil: new Date(periodEnd * 1000).toISOString(), cancelAtPeriodEnd: !!sub.cancel_at_period_end }, { merge: true });
       tx.set(db.collection('users').doc(uid), { credits: BILLING_PLAN.credits }, { merge: true });

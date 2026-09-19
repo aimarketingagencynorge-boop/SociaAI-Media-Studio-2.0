@@ -14,7 +14,8 @@ export function validPlanPrice(price: any) {
 }
 
 export function paidCreditInvoice(invoice: any) {
-  return invoice?.paid === true && invoice.currency === BILLING_PLAN.currency
+  const paid = invoice?.status === 'paid' || (invoice?.status == null && invoice?.paid === true);
+  return paid && invoice.currency === BILLING_PLAN.currency
     && invoice.amount_paid >= BILLING_PLAN.amount
     && ['subscription_create', 'subscription_cycle'].includes(invoice.billing_reason);
 }

@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { prepareBrandImage } from '../brandImage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Palette, 
@@ -118,14 +119,11 @@ const BrandKit: React.FC = () => {
     return Math.min(score, 100);
   }, [brand]);
 
-  const handleLogoUpload = (type: 'main' | 'light' | 'dark', e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (type: 'main' | 'light' | 'dark', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateBrand({ logos: { ...brand.logos, [type]: reader.result as string } });
-      };
-      reader.readAsDataURL(file);
+      try { updateBrand({ logos: { ...brand.logos, [type]: await prepareBrandImage(file, true) } }); }
+      catch (error) { triggerToast((error as Error).message); }
     }
   };
 
@@ -147,12 +145,7 @@ const BrandKit: React.FC = () => {
 
     for (const file of filesToProcess) {
       try {
-        const reader = new FileReader();
-        const imageData = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+        const imageData = await prepareBrandImage(file);
 
         newImages.push({
           id: Math.random().toString(36).substr(2, 9),
@@ -169,6 +162,7 @@ const BrandKit: React.FC = () => {
         });
       } catch (err) {
         console.error("Error reading file:", file.name, err);
+        triggerToast(`${file.name}: ${(err as Error).message}`);
       }
     }
     

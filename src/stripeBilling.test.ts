@@ -62,7 +62,7 @@ describe('Billing event processing', () => {
   });
   it('replayed and older paid invoices cannot refill the current credit balance', async () => {
     const {rows, run} = fixture(); state.sub.status = 'active';
-    const invoice = {id:'in_new', paid:true, currency:'pln', amount_paid:4900, billing_reason:'subscription_cycle',
+    const invoice = {id:'in_new', status:'paid', currency:'pln', amount_paid:4900, billing_reason:'subscription_cycle',
       customer:'cus_alice', parent:{subscription_details:{subscription:'sub_alice'}}, lines:{data:[{period:{start:1900000000,end:1902600000}}]} };
     await run('invoice.paid', invoice);
     expect(rows.get('workspaces/alice').creditBalance).toBe(500);
@@ -78,5 +78,14 @@ describe('Billing event processing', () => {
     const response = await run('invoice.paid',{id:'in_other',paid:true,currency:'pln',amount_paid:4900,billing_reason:'subscription_cycle',customer:'cus_bob',subscription:'sub_alice'});
     expect(response.status).toHaveBeenCalledWith(500);
     expect(rows.get('workspaces/alice').creditBalance).toBe(0);
+  });
+  it('does not reuse test customer or subscription state in live mode', async () => {
+    const { db, rows } = memoryDb();
+    rows.set('billingPrivate/alice', { customerId: 'cus_test', cardHash: 'test_card' });
+    rows.set('workspaces/alice', { subscriptionStatus: 'active', billingMode: 'test', billingAccessUntil: '2030-01-01' });
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_live_fake');
+    const res: any = { json: vi.fn(), status: vi.fn().mockReturnThis() };
+    await installBilling(db).status({ body: { userId: 'alice' } } as any, res);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ mode: 'live', hasCard: false, subscriptionStatus: null, accessUntil: null }));
   });
 });
