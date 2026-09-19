@@ -53,6 +53,26 @@ else:
     api('POST', rules_base+'/releases', json=release)
 print('Named Firestore database rules deployed')
 
+bucket = PROJECT+'-sociai-media'
+bucket_url = f'https://firebasestorage.googleapis.com/v1beta/projects/{PROJECT}/buckets/{bucket}'
+bucket_response = session.get(bucket_url, timeout=60)
+if bucket_response.status_code == 404:
+    api('POST', bucket_url+':addFirebase', json={})
+elif not bucket_response.ok:
+    raise RuntimeError('Cannot inspect Firebase Storage registration')
+storage_rules = "rules_version = '2'; service firebase.storage { match /b/{bucket}/o { match /{path=**} { allow read, write: if false; } } }"
+storage_set = api('POST', rules_base+'/rulesets', json={'source': {'files': [{'name': 'storage.rules', 'content': storage_rules}]}})
+storage_release = {'name': f'projects/{PROJECT}/releases/firebase.storage/{bucket}', 'rulesetName': storage_set['name']}
+storage_url = 'https://firebaserules.googleapis.com/v1/'+storage_release['name']
+storage_old = session.get(storage_url, timeout=60)
+if storage_old.ok:
+    api('PATCH', storage_url, json={'release': storage_release, 'updateMask': 'rulesetName'})
+elif storage_old.status_code == 404:
+    api('POST', rules_base+'/releases', json=storage_release)
+else:
+    raise RuntimeError('Cannot inspect storage rules')
+print('Generated media bucket linked with server-only writes')
+
 secret_names = ['GEMINI_MASTER_KEY', 'AI_ENCRYPTION_KEY', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_FINGERPRINT_SECRET']
 bindings = []
 for name in secret_names:
