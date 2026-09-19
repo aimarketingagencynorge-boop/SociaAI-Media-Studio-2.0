@@ -152,7 +152,7 @@ export function installBilling(db: Firestore) {
     const saved = (await privateDoc(uid).get()).data();
     if (saved?.customerId !== sub.customer) throw new Error('CUSTOMER_MISMATCH');
     const walletRef = walletDoc(uid);
-    const fields: any = { billingMode: mode, subscriptionId: sub.id, subscriptionStatus: sub.status, cancelAtPeriodEnd: !!sub.cancel_at_period_end };
+    const fields: any = { billingMode: mode, subscriptionId: sub.id, subscriptionStatus: sub.status, cancelAtPeriodEnd: !!(sub.cancel_at_period_end || sub.cancel_at) };
     if (sub.status === 'canceled') fields.billingAccessUntil = new Date().toISOString();
     if (grantTrial && sub.status === 'trialing' && sub.metadata.trialEligible === 'true') {
       if (!sub.default_payment_method) {
@@ -201,7 +201,7 @@ export function installBilling(db: Firestore) {
       if ((wallet.data()?.billingMode || 'test') === mode && (wallet.data()?.paidPeriodStart || 0) >= periodStart) return;
       tx.set(walletRef, { billingMode: mode, creditBalance: BILLING_PLAN.credits, activeSource: 'purchased_credits', subscriptionId: sub.id,
         subscriptionStatus: sub.status, paidPeriodStart: periodStart, trialStatus: 'completed',
-        billingAccessUntil: new Date(periodEnd * 1000).toISOString(), cancelAtPeriodEnd: !!sub.cancel_at_period_end }, { merge: true });
+        billingAccessUntil: new Date(periodEnd * 1000).toISOString(), cancelAtPeriodEnd: !!(sub.cancel_at_period_end || sub.cancel_at) }, { merge: true });
       tx.set(db.collection('users').doc(uid), { credits: BILLING_PLAN.credits }, { merge: true });
       tx.set(walletRef.collection('transactions').doc(invoice.id), { userId: uid, actionType: 'purchase', amount: BILLING_PLAN.credits - (wallet.data()?.creditBalance || 0), source: 'subscription_renewal', createdAt: new Date().toISOString() });
     });

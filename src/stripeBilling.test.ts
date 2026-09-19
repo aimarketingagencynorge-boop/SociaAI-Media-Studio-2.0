@@ -79,6 +79,14 @@ describe('Billing event processing', () => {
     expect(response.status).toHaveBeenCalledWith(500);
     expect(rows.get('workspaces/alice').creditBalance).toBe(0);
   });
+  it('shows renewal disabled for cancellation scheduled with cancel_at', async () => {
+    const {rows, run} = fixture();
+    state.sub.status = 'active';
+    state.sub.cancel_at_period_end = false;
+    state.sub.cancel_at = 2000000000;
+    await run('customer.subscription.updated', {id: 'sub_alice'});
+    expect(rows.get('workspaces/alice').cancelAtPeriodEnd).toBe(true);
+  });
   it('does not reuse test customer or subscription state in live mode', async () => {
     const { db, rows } = memoryDb();
     rows.set('billingPrivate/alice', { customerId: 'cus_test', cardHash: 'test_card' });
