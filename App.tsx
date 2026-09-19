@@ -1,8 +1,10 @@
 
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import { useStore } from './store';
 import { AuthProvider, useAuth } from './AuthContext';
 
+const Workshop = lazy(() => import('./components/Workshop'));
+const QuickStart = lazy(() => import('./components/QuickStart'));
 // Lazy load components
 const LandingPage = lazy(() => import('./components/LandingPage'));
 const Onboarding = lazy(() => import('./components/Onboarding'));
@@ -26,6 +28,14 @@ const LoadingSpinner = () => (
 const AppContent: React.FC = () => {
   const { isAuthenticated, onboardingStep, activeView, isStarted } = useStore();
   const { loading } = useAuth();
+  const [advancedOnboarding, setAdvancedOnboarding] = useState(false);
+  useEffect(() => {
+    if (isAuthenticated && new URLSearchParams(window.location.search).has('billing')) {
+      useStore.getState().setIsStarted(true);
+      useStore.getState().setActiveView('store');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, [isAuthenticated]);
 
   if (loading) {
     return <LoadingSpinner />;
@@ -36,7 +46,7 @@ const AppContent: React.FC = () => {
       {!isStarted || !isAuthenticated ? (
         <LandingPage />
       ) : onboardingStep > 0 ? (
-        <Onboarding />
+        advancedOnboarding ? <Onboarding /> : <QuickStart onAdvanced={() => setAdvancedOnboarding(true)} />
       ) : (
         <AppShell>
           {(() => {
@@ -66,6 +76,9 @@ const AppContent: React.FC = () => {
 };
 
 const App: React.FC = () => {
+  if (new URLSearchParams(window.location.search).get("workshop") === "1") {
+    return <Suspense fallback={<LoadingSpinner />}><Workshop onClose={() => { window.location.href = "/"; }} onStart={() => { window.location.href = "/"; }} /></Suspense>;
+  }
   return (
     <AuthProvider>
       <AppContent />

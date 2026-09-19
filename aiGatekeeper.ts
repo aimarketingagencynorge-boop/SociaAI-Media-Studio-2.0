@@ -1,3 +1,4 @@
+import { apiFetch } from './apiClient';
 import { CreditActionType } from './types';
 
 export interface AIRequestPayload {
@@ -9,7 +10,23 @@ export interface AIRequestPayload {
 
 export const callAI = async (actionType: CreditActionType, payload: AIRequestPayload, userId: string, workspaceId: string) => {
     try {
-        const response = await fetch('/api/ai/execute', {
+        // Generated assets are stored as URLs; Gemini expects inline image bytes for edits.
+        if (payload.image?.startsWith('https://')) {
+            const imageResponse = await fetch(payload.image);
+            if (!imageResponse.ok) throw new Error('Nie udało się pobrać obrazu źródłowego.');
+            const blob = await imageResponse.blob();
+            if (!['image/png', 'image/jpeg', 'image/webp'].includes(blob.type) || blob.size > 15 * 1024 * 1024) {
+                throw new Error('Użyj obrazu PNG, JPEG lub WebP o rozmiarze do 15 MB.');
+            }
+            const image = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = () => reject(new Error('Nie udało się odczytać obrazu.'));
+                reader.readAsDataURL(blob);
+            });
+            payload = { ...payload, image };
+        }
+        const response = await apiFetch('/api/ai/execute', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ actionType, payload, userId, workspaceId })
@@ -21,8 +38,7 @@ export const callAI = async (actionType: CreditActionType, payload: AIRequestPay
             try {
                 result = await response.json();
             } catch (jsonError: any) {
-                const text = await response.text();
-                throw new Error(`AI Gatekeeper Error: Invalid JSON response from server. Status: ${response.status}. Body: ${text.slice(0, 100)}...`);
+                throw new Error(`AI Gatekeeper Error: Invalid JSON response from server. Status: ${response.status}.`);
             }
             
             if (!response.ok) {

@@ -17,11 +17,7 @@ const Store: React.FC = () => {
   ];
 
   const handleBuy = (amount: number) => {
-    // Stripe Mock logic as requested
-    console.log(`Initializing Stripe Checkout for ${amount} FC...`);
-    // In a real app we would call Stripe here. For now, let's just fuel up!
-    // addCredits(amount); // Removed: backend handles credits
-    alert(`Zasilanie zakończone! +${amount} ForceCredits dodane do Twojego portfela.`);
+    alert('Płatności nie są jeszcze podłączone.');
   };
 
   return (
@@ -76,9 +72,9 @@ const Store: React.FC = () => {
               <NeonButton 
                 variant={pack.id === '100' ? 'cyan' : pack.id === '500' ? 'purple' : 'magenta'}
                 className="w-full py-5"
-                onClick={() => handleBuy(pack.amount)}
+                disabled onClick={() => handleBuy(pack.amount)}
               >
-                {t.store.buy}
+                ZAKUP NIEDOSTĘPNY
               </NeonButton>
             </div>
 

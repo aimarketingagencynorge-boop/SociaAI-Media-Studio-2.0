@@ -235,7 +235,7 @@ const BrandKit: React.FC = () => {
       triggerToast(t.brandKit.dnaRefinedByAI);
     } catch (e) {
       console.error(e);
-      alert(t.brandKit.dnaRefinementFailed);
+      triggerToast(t.brandKit.dnaRefinementFailed);
     } finally {
       setIsRefining(false);
     }
@@ -266,7 +266,7 @@ const BrandKit: React.FC = () => {
   );
 
   return (
-    <div className="h-screen overflow-y-auto custom-scrollbar relative bg-transparent">
+    <div className="relative bg-transparent">
       <div className="p-8 lg:p-12 max-w-[1500px] mx-auto space-y-16 pb-48">
         
         {/* HUD HEADER */}
@@ -707,7 +707,7 @@ const BrandKit: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 sm:gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
                 {(brand.referenceImages || []).map((image) => (
                   <motion.div 
                     layoutId={image.id}

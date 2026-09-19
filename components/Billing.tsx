@@ -1,3 +1,5 @@
+import SubscriptionPanel from './SubscriptionPanel';
+import { apiFetch } from '../apiClient';
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
@@ -37,7 +39,7 @@ const Billing: React.FC = () => {
 
   const handleUpdateAISettings = async (updates: any) => {
     try {
-      const response = await fetch('/api/ai/settings/update', {
+      const response = await apiFetch('/api/ai/settings/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspaceId, ...updates })
@@ -45,6 +47,7 @@ const Billing: React.FC = () => {
       if (!response.ok) throw new Error("Failed to update AI settings");
     } catch (err) {
       console.error(err);
+      throw err;
     }
   };
 
@@ -52,7 +55,7 @@ const Billing: React.FC = () => {
     if (!apiKey.trim()) return;
     setIsSavingKey(true);
     try {
-      await handleUpdateAISettings({ userApiKey: apiKey, activeSource: 'user_api_key' });
+      await handleUpdateAISettings({ geminiApiKey: apiKey, activeSource: 'user_api_key' });
       setApiKey('');
       alert("Klucz API został zapisany i aktywowany!");
     } catch (error) {
@@ -63,21 +66,15 @@ const Billing: React.FC = () => {
     }
   };
 
-  const transactions = [
-    { id: 'INV-821', date: '2024-11-05', amount: '199 PLN', fc: '500 FC', status: 'PAID' },
-    { id: 'INV-710', date: '2024-10-21', amount: '49 PLN', fc: '100 FC', status: 'PAID' },
-    { id: 'INV-602', date: '2024-09-15', amount: '399 PLN', fc: '1200 FC', status: 'PAID' },
-  ];
+  const transactions: {id: string; date: string; amount: string; fc: string; status: string}[] = [];
 
-  const handleBuy = (amount: number) => {
-    // Stripe Logic
-    console.log("Stripe Key: pk_live_51QYtS9GCTUVg4lvlC9pKydFlkzBGTFVruh3bvNNz4RwW3EmyA3Pjiafd17pXJ5zWwI2bx4PlCR3ZYD95Z5KTrIqm00Z8bdqdl1");
-    // In a real app, this would redirect to Stripe or call a backend endpoint to add credits
-    alert(`Autoryzacja udana! Portfel zasilony o ${amount} ForceCredits.`);
+  const handleBuy = (_amount: number) => {
+    alert('Zakup kredytów nie jest jeszcze dostępny. Możesz użyć własnego klucza Gemini w ustawieniach.');
   };
 
   return (
     <div className="p-8 pb-32 max-w-6xl mx-auto min-h-full flex flex-col">
+      <SubscriptionPanel />
       {/* AI Fuel Station - Gatekeeper Settings */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
         {/* Mode Selector */}
@@ -209,9 +206,9 @@ const Billing: React.FC = () => {
              <NeonButton 
                variant="magenta" 
                className="w-full py-5 text-xs font-black shadow-[0_0_20px_rgba(199,76,255,0.2)]"
-               onClick={() => handleBuy(amt)}
+               disabled
              >
-               AUTORYZUJ ZAKUP
+               WKRÓTCE — ZAKUP NIEDOSTĘPNY
              </NeonButton>
           </motion.div>
         ))}

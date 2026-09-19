@@ -28,7 +28,50 @@
 
   .starfield {
     @apply fixed inset-0 pointer-events-none z-0 overflow-hidden;
-    background: radial-gradient(circle at center, #1a1a2e 0%, #0a0a12 100%);
+    background: radial-gradient(circle at center, #0D0D1A 0%, #050508 100%);
+  }
+
+  .scanline {
+    @apply fixed inset-0 pointer-events-none z-50;
+    background: linear-gradient(
+      to bottom,
+      transparent 50%,
+      rgba(52, 224, 247, 0.02) 50%
+    );
+    background-size: 100% 4px;
+  }
+
+  .vignette {
+    @apply fixed inset-0 pointer-events-none z-40;
+    background: radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+  }
+
+  .crt-flicker {
+    animation: flicker 0.15s infinite;
+  }
+
+  @keyframes flicker {
+    0% { opacity: 0.97; }
+    5% { opacity: 0.95; }
+    10% { opacity: 0.9; }
+    15% { opacity: 0.95; }
+    20% { opacity: 0.98; }
+    25% { opacity: 0.95; }
+    30% { opacity: 0.9; }
+    35% { opacity: 0.95; }
+    40% { opacity: 0.98; }
+    45% { opacity: 0.95; }
+    50% { opacity: 0.9; }
+    55% { opacity: 0.95; }
+    60% { opacity: 0.98; }
+    65% { opacity: 0.95; }
+    70% { opacity: 0.9; }
+    75% { opacity: 0.95; }
+    80% { opacity: 0.98; }
+    85% { opacity: 0.95; }
+    90% { opacity: 0.9; }
+    95% { opacity: 0.95; }
+    100% { opacity: 0.97; }
   }
 
   .star {

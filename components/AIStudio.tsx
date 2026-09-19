@@ -1,3 +1,5 @@
+import { localDate } from '../missionDates';
+import { renderBrandedImage, downloadMedia } from '../mediaExport';
 
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -64,7 +66,7 @@ const AIStudio: React.FC = () => {
   const [useBrandDNA, setUseBrandDNA] = useState(true);
   const [useLogo, setUseLogo] = useState(false);
   const [useSignature, setUseSignature] = useState(false);
-  const [useBrandColors, setUseBrandColors] = useState(false);
+  const [useBrandColors, setUseBrandColors] = useState(true);
   
   // Overlay Controls
   const [overlayText, setOverlayText] = useState('');
@@ -94,7 +96,9 @@ const AIStudio: React.FC = () => {
   };
 
   const handleGenerate = async () => {
-    if (!prompt && mode !== 'image-to-video') return;
+    if (isGenerating) return;
+    if (!prompt.trim()) { setError('Opisz materiał, który chcesz stworzyć.'); return; }
+    if (mode.startsWith('image-to') && !sourceImage) { setError('Dodaj obraz źródłowy.'); return; }
     setIsGenerating(true);
     setGenerationStatus(statusMessages[0]);
     setError(null);
@@ -106,13 +110,14 @@ const AIStudio: React.FC = () => {
     }, 3000);
     
     try {
+      const generationBrand = { ...brand, colors: useBrandColors ? brand.colors : [] };
       let outputUrl = '';
-      if (mode.includes('image')) {
+      if (mode === 'text-to-image' || mode === 'image-to-image') {
         outputUrl = await gemini.generateStudioImage(
           mode as any, 
           prompt, 
           platform, 
-          brand, 
+          generationBrand, 
           useBrandDNA, 
           sourceImage || undefined
         );
@@ -121,7 +126,7 @@ const AIStudio: React.FC = () => {
           mode as any, 
           prompt, 
           platform, 
-          brand, 
+          generationBrand, 
           useBrandDNA, 
           sourceImage || undefined
         );
@@ -131,7 +136,7 @@ const AIStudio: React.FC = () => {
           'text-to-image', 
           prompt, 
           platform, 
-          brand, 
+          generationBrand, 
           useBrandDNA
         );
       }
@@ -140,7 +145,7 @@ const AIStudio: React.FC = () => {
         id: Math.random().toString(36).substr(2, 9),
         type: mode.includes('video') ? 'video' : 'image',
         mode,
-        sourceImageUrl: sourceImage || undefined,
+        // Original file remains in the current editing session, not in Firestore.
         outputUrl,
         platform,
         createdAt: new Date().toISOString(),
@@ -170,6 +175,16 @@ const AIStudio: React.FC = () => {
     }
   };
 
+  const handleDownload = async () => {
+    if (!generatedAsset) return;
+    try {
+      const output = generatedAsset.type === 'image'
+        ? await renderBrandedImage(generatedAsset.outputUrl, brand, { logo: useLogo, signature: useSignature, text: showOverlay ? overlayText : '' })
+        : generatedAsset.outputUrl;
+      await downloadMedia(output, `sociai-${generatedAsset.id}.${generatedAsset.type === 'image' ? 'png' : 'mp4'}`);
+    } catch (err: any) { setError(err.message); }
+  };
+
   const handleSaveToMediaLab = () => {
     if (!generatedAsset) return;
     addMediaAsset({
@@ -196,7 +211,8 @@ const AIStudio: React.FC = () => {
       status: 'draft',
       isApproved: false,
       weekIndex: 0,
-      dayIndex: 0,
+      dayIndex: (new Date().getDay() + 6) % 7,
+      plannedDate: localDate(new Date()),
       showHook: true,
       signatureEnabled: useSignature
     };
@@ -381,7 +397,7 @@ const AIStudio: React.FC = () => {
             variant="purple" 
             className="w-full py-6 text-lg font-black"
             onClick={handleGenerate}
-            disabled={isGenerating || (!prompt && mode !== 'image-to-video')}
+            disabled={isGenerating || !prompt.trim() || (mode.startsWith('image-to') && !sourceImage)}
           >
             {isGenerating ? (
               <div className="flex items-center gap-3">
@@ -512,11 +528,11 @@ const AIStudio: React.FC = () => {
                     </AnimatePresence>
 
                     {/* Branding Overlays Simulation */}
-                    {!showOriginal && (
+                    {!showOriginal && generatedAsset.type === 'image' && (
                       <>
-                        {useLogo && (
+                        {useLogo && brand.logos.main && (
                           <div className="absolute top-6 right-6 w-12 h-12 bg-white/10 backdrop-blur-md rounded-lg border border-white/20 flex items-center justify-center">
-                            <ShieldCheck className="text-[#34E0F7]" size={24} />
+                            <img src={brand.logos.main!} alt={brand.name} className="w-full h-full object-contain" />
                           </div>
                         )}
                         
@@ -592,7 +608,7 @@ const AIStudio: React.FC = () => {
                         <Calendar className="text-white/40 group-hover:text-[#8C4DFF]" size={20} />
                         <span className="text-[10px] font-bold text-white/40 uppercase">{t.studio.planner}</span>
                       </button>
-                      <button className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
+                      <button onClick={handleDownload} className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group">
                         <Download className="text-white/40 group-hover:text-white" size={20} />
                         <span className="text-[10px] font-bold text-white/40 uppercase">{t.studio.download}</span>
                       </button>

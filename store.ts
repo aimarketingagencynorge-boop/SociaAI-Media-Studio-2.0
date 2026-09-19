@@ -9,6 +9,10 @@ import { onAuthStateChanged, User } from 'firebase/auth';
 // Debounce timers for Firestore sync
 let brandSyncTimeout: any = null;
 let postsSyncTimeout: any = null;
+let mediaAssetsSyncTimeout: any = null;
+let studioAssetsSyncTimeout: any = null;
+let referenceImagesSyncTimeout: any = null;
+let assetsSyncTimeout: any = null;
 
 export type AppView = 'dashboard' | 'planner' | 'ai-studio' | 'media-lab' | 'analytics' | 'brand-kit' | 'store' | 'settings' | 'integrations';
 
@@ -181,6 +185,85 @@ const indexedDBStorage: StateStorage = {
   },
 };
 
+const compressBase64Image = (base64Str: string, maxWidth = 640, maxHeight = 640, quality = 0.75): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!base64Str || !base64Str.startsWith('data:image/')) {
+      resolve(base64Str);
+      return;
+    }
+    
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      resolve(base64Str);
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = base64Str;
+    img.onload = () => {
+      try {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(base64Str);
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+        
+        if (compressedBase64.length < base64Str.length) {
+          resolve(compressedBase64);
+        } else {
+          resolve(base64Str);
+        }
+      } catch (err) {
+        console.error("Failed to compress base64 image", err);
+        resolve(base64Str);
+      }
+    };
+    img.onerror = () => {
+      resolve(base64Str);
+    };
+  });
+};
+
+const sanitizeForFirestore = (data: any): any => {
+  if (data === undefined) return null;
+  if (data === null) return null;
+  if (Array.isArray(data)) {
+    return data.map(sanitizeForFirestore);
+  }
+  if (typeof data === 'object') {
+    if (data instanceof Date) return data.toISOString();
+    const clean: any = {};
+    for (const key of Object.keys(data)) {
+      const val = data[key];
+      if (val !== undefined) {
+        clean[key] = sanitizeForFirestore(val);
+      }
+    }
+    return clean;
+  }
+  return data;
+};
+
 export const useStore = create<UserState & StoreActions & { activeView: AppView; firebaseUser: User | null }>()(
   persist(
     (set, get) => ({
@@ -200,7 +283,7 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
       userId: '',
       workspaceId: '',
       integrations: [],
-      webhookUrl: 'https://hooks.zapier.com/hooks/catch/21562148/uq3g9os/',
+      webhookUrl: '',
       socialLinks: {
         instagram: true,
         facebook: false,
@@ -277,70 +360,119 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
               industry: brandToSync.industry || '',
               updatedAt: new Date().toISOString()
             }).catch((e: any) => {
+              // If doc doesn't exist, set it
               setDoc(userDocRef, { 
                 brandName: brandToSync.name || '',
                 industry: brandToSync.industry || '',
                 updatedAt: new Date().toISOString()
               }, { merge: true }).catch((err: any) => handleFirestoreError(err, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}`));
             });
-          }, 2000); // 2 second debounce
+          }, 5000); // 5 second debounce for brand metadata
 
-          // If referenceImages or assets were explicitly provided in 'data', sync them immediately
+          // If referenceImages or assets were explicitly provided in 'data', sync them with debounce
           if (data.referenceImages && Array.isArray(data.referenceImages)) {
-            data.referenceImages.forEach((img: any) => {
-              const imgDocRef = doc(db, 'users', state.firebaseUser!.uid, 'brands', 'default', 'referenceImages', img.id);
-              setDoc(imgDocRef, img, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/brands/default/referenceImages/${img.id}`));
-            });
+            if (referenceImagesSyncTimeout) clearTimeout(referenceImagesSyncTimeout);
+            referenceImagesSyncTimeout = setTimeout(() => {
+              const currentState = get();
+              if (!currentState.firebaseUser) return;
+              
+              const batch = writeBatch(db);
+              currentState.brand.referenceImages.forEach((img: any) => {
+                const imgDocRef = doc(db, 'users', currentState.firebaseUser!.uid, 'brands', 'default', 'referenceImages', img.id);
+                batch.set(imgDocRef, sanitizeForFirestore(img), { merge: true });
+              });
+              batch.commit().catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/brands/default/referenceImages (batch)`));
+            }, 5000);
           }
 
           if (data.assets && Array.isArray(data.assets)) {
-            data.assets.forEach((asset: any) => {
-              const assetDocRef = doc(db, 'users', state.firebaseUser!.uid, 'brands', 'default', 'assets', asset.id);
-              setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/brands/default/assets/${asset.id}`));
-            });
+            if (assetsSyncTimeout) clearTimeout(assetsSyncTimeout);
+            assetsSyncTimeout = setTimeout(() => {
+              const currentState = get();
+              if (!currentState.firebaseUser) return;
+
+              const batch = writeBatch(db);
+              currentState.brand.assets.forEach((asset: any) => {
+                const assetDocRef = doc(db, 'users', currentState.firebaseUser!.uid, 'brands', 'default', 'assets', asset.id);
+                batch.set(assetDocRef, sanitizeForFirestore(asset), { merge: true });
+              });
+              batch.commit().catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/brands/default/assets (batch)`));
+            }, 5000);
           }
         }
       },
       setAuthenticated: (isAuthenticated) => set({ isAuthenticated }),
-      setFirebaseUser: (firebaseUser) => set({ firebaseUser }),
+      setFirebaseUser: (firebaseUser) => {
+        if (get().firebaseUser?.uid !== firebaseUser?.uid) {
+          [brandSyncTimeout, postsSyncTimeout, mediaAssetsSyncTimeout, studioAssetsSyncTimeout, referenceImagesSyncTimeout, assetsSyncTimeout].forEach(clearTimeout);
+        }
+        set({ firebaseUser });
+      },
       setAiSettings: (aiSettings) => set({ aiSettings, credits: aiSettings?.creditBalance || 0 }),
       setCredits: (credits) => set({ credits }),
       setIsLoadingAICredits: (isLoadingAICredits) => set({ isLoadingAICredits }),
       setWorkspaceId: (workspaceId) => set({ workspaceId }),
       setWeeklyPlan: (posts, skipSync = false) => {
-        set({ posts });
-        if (skipSync) return;
-        
-        const state = get();
-        if (state.firebaseUser) {
-          // Debounce the posts sync
-          if (postsSyncTimeout) clearTimeout(postsSyncTimeout);
+        const applyWeeklyPlan = (resolvedPosts: SocialPost[]) => {
+          set({ posts: resolvedPosts });
+          if (skipSync) return;
           
-          postsSyncTimeout = setTimeout(async () => {
-            const currentState = get();
-            if (!currentState.firebaseUser) return;
-
-            const batch = writeBatch(db);
-            currentState.posts.forEach(post => {
-              const postDocRef = doc(db, 'users', currentState.firebaseUser!.uid, 'posts', post.id);
-              batch.set(postDocRef, post, { merge: true });
-            });
+          const state = get();
+          if (state.firebaseUser) {
+            // Debounce the posts sync
+            if (postsSyncTimeout) clearTimeout(postsSyncTimeout);
             
-            try {
-              await batch.commit();
-            } catch (e: any) {
-              handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/posts (batch)`);
-            }
-          }, 3000); // 3 second debounce for posts
+            postsSyncTimeout = setTimeout(async () => {
+              const currentState = get();
+              if (!currentState.firebaseUser) return;
+
+              const batch = writeBatch(db);
+              currentState.posts.forEach(post => {
+                const postDocRef = doc(db, 'users', currentState.firebaseUser!.uid, 'posts', post.id);
+                batch.set(postDocRef, sanitizeForFirestore(post), { merge: true });
+              });
+              
+              try {
+                await batch.commit();
+              } catch (e: any) {
+                handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/posts (batch)`);
+              }
+            }, 0); // Save the batch immediately
+          }
+        };
+
+        const imagePosts = posts.filter(p => p.imagePreviewUrl && p.imagePreviewUrl.startsWith('data:image/'));
+        if (imagePosts.length > 0) {
+          Promise.all(
+            posts.map(async (p) => {
+              if (p.imagePreviewUrl && p.imagePreviewUrl.startsWith('data:image/')) {
+                const compressedUrl = await compressBase64Image(p.imagePreviewUrl);
+                return { ...p, imagePreviewUrl: compressedUrl };
+              }
+              return p;
+            })
+          ).then(applyWeeklyPlan);
+        } else {
+          applyWeeklyPlan(posts);
         }
       },
       addPost: (post, skipSync = false) => {
-        set((state) => ({ posts: [...state.posts, post] }));
-        if (skipSync) return;
-        const state = get();
-        if (state.firebaseUser) {
-          const postDocRef = doc(db, 'users', state.firebaseUser.uid, 'posts', post.id);
-          setDoc(postDocRef, post).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${state.firebaseUser?.uid}/posts/${post.id}`));
+        const applyAdd = (resolvedPost: SocialPost) => {
+          set((state) => ({ posts: [...state.posts, resolvedPost] }));
+          if (skipSync) return;
+          const state = get();
+          if (state.firebaseUser) {
+            const postDocRef = doc(db, 'users', state.firebaseUser.uid, 'posts', resolvedPost.id);
+            setDoc(postDocRef, sanitizeForFirestore(resolvedPost)).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `posts/${resolvedPost.id}`));
+          }
+        };
+
+        if (post.imagePreviewUrl && post.imagePreviewUrl.startsWith('data:image/')) {
+          compressBase64Image(post.imagePreviewUrl).then((compressedUrl) => {
+            applyAdd({ ...post, imagePreviewUrl: compressedUrl });
+          });
+        } else {
+          applyAdd(post);
         }
       },
       removePost: (id, skipSync = false) => {
@@ -353,14 +485,24 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         }
       },
       updatePost: (id, updates, skipSync = false) => {
-        set((state) => ({
-          posts: state.posts.map(p => p.id === id ? { ...p, ...updates } : p)
-        }));
-        if (skipSync) return;
-        const state = get();
-        if (state.firebaseUser) {
-          const postDocRef = doc(db, 'users', state.firebaseUser.uid, 'posts', id);
-          setDoc(postDocRef, updates, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/posts/${id}`));
+        const applyUpdate = (resolvedUpdates: Partial<SocialPost>) => {
+          set((state) => ({
+            posts: state.posts.map(p => p.id === id ? { ...p, ...resolvedUpdates } : p)
+          }));
+          if (skipSync) return;
+          const state = get();
+          if (state.firebaseUser) {
+            const postDocRef = doc(db, 'users', state.firebaseUser.uid, 'posts', id);
+            setDoc(postDocRef, sanitizeForFirestore(resolvedUpdates), { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `posts/${id}`));
+          }
+        };
+
+        if (updates.imagePreviewUrl && updates.imagePreviewUrl.startsWith('data:image/')) {
+          compressBase64Image(updates.imagePreviewUrl).then((compressedUrl) => {
+            applyUpdate({ ...updates, imagePreviewUrl: compressedUrl });
+          });
+        } else {
+          applyUpdate(updates);
         }
       },
       setActiveView: (activeView) => set({ activeView }),
@@ -382,8 +524,13 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
 
         const state = get();
         if (state.firebaseUser) {
-          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'brands', 'default', 'assets', asset.id);
-          setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${state.firebaseUser?.uid}/brands/default/assets/${asset.id}`));
+          if (assetsSyncTimeout) clearTimeout(assetsSyncTimeout);
+          assetsSyncTimeout = setTimeout(() => {
+            const currentState = get();
+            if (!currentState.firebaseUser) return;
+            const assetDocRef = doc(db, 'users', currentState.firebaseUser.uid, 'brands', 'default', 'assets', asset.id);
+            setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${currentState.firebaseUser?.uid}/brands/default/assets/${asset.id}`));
+          }, 5000);
         }
       },
       removeBrandAsset: (id) => {
@@ -410,8 +557,13 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
 
         const state = get();
         if (state.firebaseUser) {
-          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'brands', 'default', 'assets', id);
-          setDoc(assetDocRef, { tag, updatedAt: new Date().toISOString() }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/brands/default/assets/${id}`));
+          if (assetsSyncTimeout) clearTimeout(assetsSyncTimeout);
+          assetsSyncTimeout = setTimeout(() => {
+            const currentState = get();
+            if (!currentState.firebaseUser) return;
+            const assetDocRef = doc(db, 'users', currentState.firebaseUser.uid, 'brands', 'default', 'assets', id);
+            setDoc(assetDocRef, { tag, updatedAt: new Date().toISOString() }, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/brands/default/assets/${id}`));
+          }, 5000);
         }
       },
       addReferenceImage: (image) => {
@@ -426,8 +578,12 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         
         const state = get();
         if (state.firebaseUser) {
-          const imgDocRef = doc(db, 'users', state.firebaseUser.uid, 'brands', 'default', 'referenceImages', image.id);
-          setDoc(imgDocRef, image, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${state.firebaseUser?.uid}/brands/default/referenceImages/${image.id}`));
+          (() => {
+            const currentState = get();
+            if (!currentState.firebaseUser) return;
+            const imgDocRef = doc(db, 'users', currentState.firebaseUser.uid, 'brands', 'default', 'referenceImages', image.id);
+            setDoc(imgDocRef, image, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.CREATE, `users/${currentState.firebaseUser?.uid}/brands/default/referenceImages/${image.id}`));
+          })();
         }
       },
       addReferenceImages: (images) => {
@@ -482,8 +638,12 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
 
         const state = get();
         if (state.firebaseUser) {
-          const imgDocRef = doc(db, 'users', state.firebaseUser.uid, 'brands', 'default', 'referenceImages', id);
-          setDoc(imgDocRef, updates, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/brands/default/referenceImages/${id}`));
+          (() => {
+            const currentState = get();
+            if (!currentState.firebaseUser) return;
+            const imgDocRef = doc(db, 'users', currentState.firebaseUser.uid, 'brands', 'default', 'referenceImages', id);
+            setDoc(imgDocRef, updates, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/brands/default/referenceImages/${id}`));
+          })();
         }
       },
       updateReferenceSettings: (settings) => {
@@ -502,15 +662,35 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         }
       },
       addMediaAsset: (asset, skipSync = false) => {
-        set((state) => ({
-          mediaAssets: [asset, ...state.mediaAssets]
-        }));
-        if (skipSync) return;
-        const state = get();
-        if (state.firebaseUser) {
-          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'mediaAssets', asset.id);
-          setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/mediaAssets/${asset.id}`));
-        }
+        const applyAddMedia = (resolvedAsset: MediaAsset) => {
+          set((state) => ({
+            mediaAssets: [resolvedAsset, ...state.mediaAssets]
+          }));
+          if (skipSync) return;
+          const state = get();
+          if (state.firebaseUser) {
+            (() => {
+              const currentState = get();
+              if (!currentState.firebaseUser) return;
+              const assetDocRef = doc(db, 'users', currentState.firebaseUser.uid, 'mediaAssets', resolvedAsset.id);
+              setDoc(assetDocRef, sanitizeForFirestore(resolvedAsset), { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/mediaAssets/${resolvedAsset.id}`));
+            })();
+          }
+        };
+
+        const compressUrls = async () => {
+          let sourceUrl = asset.sourceUrl;
+          let editedUrl = asset.editedUrl;
+          if (sourceUrl && sourceUrl.startsWith('data:image/')) {
+            sourceUrl = await compressBase64Image(sourceUrl);
+          }
+          if (editedUrl && editedUrl.startsWith('data:image/')) {
+            editedUrl = await compressBase64Image(editedUrl);
+          }
+          return { ...asset, sourceUrl, editedUrl };
+        };
+
+        compressUrls().then(applyAddMedia);
       },
       removeMediaAsset: (id, skipSync = false) => {
         set((state) => ({
@@ -524,26 +704,69 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
         }
       },
       updateMediaAsset: (id, updates, skipSync = false) => {
-        set((state) => ({
-          mediaAssets: state.mediaAssets.map(a => a.id === id ? { ...a, ...updates } : a)
-        }));
-        if (skipSync) return;
-        const state = get();
-        if (state.firebaseUser) {
-          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'mediaAssets', id);
-          setDoc(assetDocRef, updates, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/mediaAssets/${id}`));
-        }
+        const applyUpdateMedia = (resolvedUpdates: Partial<MediaAsset>) => {
+          set((state) => ({
+            mediaAssets: state.mediaAssets.map(a => a.id === id ? { ...a, ...resolvedUpdates } : a)
+          }));
+          if (skipSync) return;
+          const state = get();
+          if (state.firebaseUser) {
+            (() => {
+              const currentState = get();
+              if (!currentState.firebaseUser) return;
+              const assetDocRef = doc(db, 'users', currentState.firebaseUser.uid, 'mediaAssets', id);
+              setDoc(assetDocRef, sanitizeForFirestore(resolvedUpdates), { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/mediaAssets/${id}`));
+            })();
+          }
+        };
+
+        const compressUrls = async () => {
+          let sourceUrl = updates.sourceUrl;
+          let editedUrl = updates.editedUrl;
+          if (sourceUrl && sourceUrl.startsWith('data:image/')) {
+            sourceUrl = await compressBase64Image(sourceUrl);
+          }
+          if (editedUrl && editedUrl.startsWith('data:image/')) {
+            editedUrl = await compressBase64Image(editedUrl);
+          }
+          const up: Partial<MediaAsset> = { ...updates };
+          if (sourceUrl !== undefined) up.sourceUrl = sourceUrl;
+          if (editedUrl !== undefined) up.editedUrl = editedUrl;
+          return up;
+        };
+
+        compressUrls().then(applyUpdateMedia);
       },
       addStudioAsset: (asset, skipSync = false) => {
-        set((state) => ({
-          studioAssets: [asset, ...state.studioAssets]
-        }));
-        if (skipSync) return;
-        const state = get();
-        if (state.firebaseUser) {
-          const assetDocRef = doc(db, 'users', state.firebaseUser.uid, 'studioAssets', asset.id);
-          setDoc(assetDocRef, asset, { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${state.firebaseUser?.uid}/studioAssets/${asset.id}`));
-        }
+        const applyAddStudio = (resolvedAsset: StudioGeneratedAsset) => {
+          set((state) => ({
+            studioAssets: [resolvedAsset, ...state.studioAssets]
+          }));
+          if (skipSync) return;
+          const state = get();
+          if (state.firebaseUser) {
+            (() => {
+              const currentState = get();
+              if (!currentState.firebaseUser) return;
+              const assetDocRef = doc(db, 'users', currentState.firebaseUser.uid, 'studioAssets', resolvedAsset.id);
+              setDoc(assetDocRef, sanitizeForFirestore(resolvedAsset), { merge: true }).catch((e: any) => handleFirestoreError(e, OperationType.UPDATE, `users/${currentState.firebaseUser?.uid}/studioAssets/${resolvedAsset.id}`));
+            })();
+          }
+        };
+
+        const compressUrls = async () => {
+          let outputUrl = asset.outputUrl;
+          let brandedOutputUrl = asset.brandedOutputUrl;
+          if (outputUrl && outputUrl.startsWith('data:image/')) {
+            outputUrl = await compressBase64Image(outputUrl);
+          }
+          if (brandedOutputUrl && brandedOutputUrl.startsWith('data:image/')) {
+            brandedOutputUrl = await compressBase64Image(brandedOutputUrl);
+          }
+          return { ...asset, outputUrl, brandedOutputUrl };
+        };
+
+        compressUrls().then(applyAddStudio);
       },
       removeStudioAsset: (id, skipSync = false) => {
         set((state) => ({
@@ -604,14 +827,18 @@ export const useStore = create<UserState & StoreActions & { activeView: AppView;
               body: JSON.stringify(payload)
             });
             if (!response.ok) {
-              console.error(`Failed to send webhook to ${integration.name}: ${response.statusText}`);
+              throw new Error(`Eksport do ${integration.name} nieudany (${response.status}).`);
             }
           } catch (error) {
             console.error(`Error sending webhook to ${integration.name}:`, error);
+            throw error;
           }
         });
 
-        await Promise.allSettled(promises);
+        const results = await Promise.allSettled(promises);
+        if (eventData.eventType === 'export_to_external' && results.some(result => result.status === 'rejected')) {
+          throw new Error('Co najmniej jedna integracja odrzuciła eksport. Sprawdź odbiorców przed ponowieniem, aby uniknąć duplikatów.');
+        }
       },
       resetMission: () => set({
         onboardingStep: 1,
