@@ -1,3 +1,4 @@
+import { apiFetch } from '../apiClient';
 
 import React from 'react';
 import { motion } from 'framer-motion';
@@ -14,16 +15,20 @@ const TikTokIcon = ({ size, className }: { size: number, className?: string }) =
 );
 
 const Settings: React.FC = () => {
-  const { language, socialLinks, toggleSocialLink, webhookUrl, brand, updateBrand, aiSettings, workspaceId } = useStore();
+  const { language, setLanguage, socialLinks, toggleSocialLink, webhookUrl, setWebhookUrl, brand, updateBrand, aiSettings, workspaceId } = useStore();
   const t = translations[language];
   const [manualKey, setManualKey] = React.useState('');
   const [isValidating, setIsValidating] = React.useState(false);
   const [validationError, setValidationError] = React.useState<string | null>(null);
   const [tempWebhook, setTempWebhook] = React.useState(webhookUrl);
 
+  React.useEffect(() => {
+    setTempWebhook(webhookUrl);
+  }, [webhookUrl]);
+
   const handleUpdateAISettings = async (updates: any) => {
     try {
-      const response = await fetch('/api/ai/settings/update', {
+      const response = await apiFetch('/api/ai/settings/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ workspaceId, ...updates })
@@ -31,6 +36,7 @@ const Settings: React.FC = () => {
       if (!response.ok) throw new Error("Failed to update AI settings");
     } catch (err) {
       console.error(err);
+      throw err;
     }
   };
 
@@ -39,7 +45,7 @@ const Settings: React.FC = () => {
     setIsValidating(true);
     setValidationError(null);
     try {
-      const response = await fetch('/api/ai/settings/validate', {
+      const response = await apiFetch('/api/ai/settings/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ geminiApiKey: manualKey })
@@ -108,7 +114,7 @@ const Settings: React.FC = () => {
                     <button 
                       onClick={async () => {
                         const state = useStore.getState();
-                        await fetch('/api/auth/init', {
+                        await apiFetch('/api/auth/init', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ userId: state.firebaseUser?.uid, email: state.firebaseUser?.email })
@@ -235,7 +241,7 @@ const Settings: React.FC = () => {
                 {(['PL', 'EN', 'NO', 'RU'] as const).map((lang) => (
                   <button
                     key={lang}
-                    onClick={() => useStore.getState().setLanguage(lang)}
+                    onClick={() => setLanguage(lang)}
                     className={`py-3 rounded-xl font-orbitron text-[10px] border transition-all ${
                       language === lang
                         ? 'bg-[#8C4DFF]/20 border-[#8C4DFF] text-white shadow-[0_0_15px_rgba(140,77,255,0.2)]'
@@ -308,7 +314,7 @@ const Settings: React.FC = () => {
             </div>
           </div>
           
-          <div className={`grid grid-cols-1 lg:grid-cols-3 gap-8 transition-all duration-500 ${brand.signature?.enabled ? 'opacity-100' : 'opacity-30 pointer-events-none grayscale'}`}>
+          <div className={`grid grid-cols-1 lg:grid-cols-3 gap-8 transition-all duration-500 ${brand.signature?.enabled ? 'opacity-100' : 'opacity-30 grayscale'}`}>
             {/* Left Column: Toggles */}
             <div className="space-y-3">
               <p className="text-[9px] font-orbitron text-[#34E0F7] uppercase tracking-widest mb-4 border-b border-[#34E0F7]/20 pb-2">{t.settings.visibility}</p>
@@ -323,8 +329,9 @@ const Settings: React.FC = () => {
                 <div key={item.id} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 hover:border-[#34E0F7]/30 transition-all group">
                   <span className="text-[10px] font-orbitron text-white/60 uppercase tracking-widest">{item.label}</span>
                   <button 
+                    disabled={!brand.signature?.enabled}
                     onClick={() => updateBrand({ signature: { ...brand.signature!, [item.id]: !brand.signature?.[item.id as keyof typeof brand.signature] } })}
-                    className={`w-10 h-5 rounded-full relative transition-all duration-300 ${brand.signature?.[item.id as keyof typeof brand.signature] ? 'bg-[#34E0F7]' : 'bg-white/10'}`}
+                    className={`w-10 h-5 rounded-full relative transition-all duration-300 ${brand.signature?.[item.id as keyof typeof brand.signature] ? 'bg-[#34E0F7]' : 'bg-white/10'} ${!brand.signature?.enabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                   >
                     <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all duration-300 ${brand.signature?.[item.id as keyof typeof brand.signature] ? 'left-6' : 'left-1'}`} />
                   </button>
@@ -338,40 +345,44 @@ const Settings: React.FC = () => {
                 <label className="flex items-center gap-2 text-[10px] font-orbitron text-white/40 uppercase tracking-widest"><MapPin size={12}/> {t.settings.addressLabel}</label>
                 <input 
                   type="text" 
+                  disabled={!brand.signature?.enabled}
                   value={brand.address || ''} 
                   onChange={(e) => updateBrand({ address: e.target.value })}
                   placeholder={t.settings.addressPlaceholder}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono"
+                  className={`w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono ${!brand.signature?.enabled ? 'cursor-not-allowed' : ''}`}
                 />
               </div>
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-[10px] font-orbitron text-white/40 uppercase tracking-widest"><Phone size={12}/> {t.settings.phoneLabel}</label>
                 <input 
                   type="text" 
+                  disabled={!brand.signature?.enabled}
                   value={brand.phone || ''} 
                   onChange={(e) => updateBrand({ phone: e.target.value })}
                   placeholder={t.settings.phonePlaceholder}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono"
+                  className={`w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono ${!brand.signature?.enabled ? 'cursor-not-allowed' : ''}`}
                 />
               </div>
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-[10px] font-orbitron text-white/40 uppercase tracking-widest"><Mail size={12}/> {t.settings.emailLabel}</label>
                 <input 
                   type="email" 
+                  disabled={!brand.signature?.enabled}
                   value={brand.email || ''} 
                   onChange={(e) => updateBrand({ email: e.target.value })}
                   placeholder={t.settings.emailPlaceholder}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono"
+                  className={`w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono ${!brand.signature?.enabled ? 'cursor-not-allowed' : ''}`}
                 />
               </div>
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-[10px] font-orbitron text-white/40 uppercase tracking-widest"><Link2 size={12}/> {t.settings.ctaLabel}</label>
                 <input 
                   type="text" 
+                  disabled={!brand.signature?.enabled}
                   value={brand.ctaLink || ''} 
                   onChange={(e) => updateBrand({ ctaLink: e.target.value })}
                   placeholder={t.settings.ctaPlaceholder}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono"
+                  className={`w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#34E0F7] transition-all text-xs font-mono ${!brand.signature?.enabled ? 'cursor-not-allowed' : ''}`}
                 />
               </div>
               
@@ -461,7 +472,7 @@ const Settings: React.FC = () => {
                   />
                 </div>
                 <button 
-                  onClick={() => useStore.getState().setWebhookUrl(tempWebhook)}
+                  onClick={() => setWebhookUrl(tempWebhook)}
                   className="p-4 bg-[#8C4DFF]/20 text-[#8C4DFF] rounded-xl border border-[#8C4DFF]/50 hover:bg-[#8C4DFF]/30 transition-all"
                 >
                   <Save size={20} />

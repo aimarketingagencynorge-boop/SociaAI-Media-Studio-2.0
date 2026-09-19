@@ -1,3 +1,4 @@
+import { apiFetch } from '../apiClient';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -78,38 +79,10 @@ const Onboarding: React.FC = () => {
   const handleScan = async () => {
     if (!url) return;
     
-    const hasCredits = aiSettings ? (aiSettings.creditBalance > 0) : (credits > 0);
     const isInitializing = isLoadingAICredits || (!aiSettings && workspaceId);
 
     if (isInitializing) {
       addLog("Initializing Neural Link... Please wait.", "system");
-      return;
-    }
-
-    if (!hasCredits) {
-      setIsRepairing(true);
-      addLog("REPAIRING_NEURAL_LINK: Attempting to restore energy units...", "warn");
-      try {
-        const response = await fetch('/api/auth/init', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, email: brand.email })
-        });
-        const data = await response.json();
-        if (data.credits > 0) {
-          addLog("ENERGY_RESTORED: 500 units synchronized. Retrying scan...", "system");
-          setIsRepairing(false);
-          // The store will update via AuthContext snapshots, but we can wait a bit
-          setTimeout(() => handleScan(), 1000);
-          return;
-        } else {
-          addLog("REPAIR_FAILED: Could not restore energy. Please check Settings.", "error");
-        }
-      } catch (err) {
-        console.error("Repair failed:", err);
-        addLog("REPAIR_FAILED: Portal unreachable.", "error");
-      }
-      setIsRepairing(false);
       return;
     }
 
@@ -147,13 +120,54 @@ const Onboarding: React.FC = () => {
       addLog(`DNA SYNCHRONIZED. Mission architecture is ready for deployment.`);
     } catch (e: any) {
       const errorMsg = e.message || 'PORTAL_UNREACHABLE';
-      addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`, "error");
       
-      if (errorMsg.includes("credits") || errorMsg.includes("402") || errorMsg.includes("Payment Required")) {
-        addLog(`Cause: INSUFFICIENT_CREDITS. Please check your balance in Settings.`, "error");
-      } else {
-        addLog(`Cause: ${errorMsg}`, "error");
+      // If it's a Firestore quota error, don't try to repair credits
+      if (errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("429") || errorMsg.includes("Free daily write units")) {
+        addLog("CRITICAL_ERR: FIRESTORE_QUOTA_EXCEEDED.", "error");
+        addLog("Action: Daily write limit reached. Please wait for the reset or check project billing.", "warn");
+        setIsScanning(false);
+        return;
       }
+      
+      // If it's a credit error, try to repair
+      if (errorMsg.includes("credits") || errorMsg.includes("402") || errorMsg.includes("Payment Required") || errorMsg.includes("resource-exhausted")) {
+        addLog("REPAIRING_NEURAL_LINK: Energy depletion detected. Attempting to restore units...", "warn");
+        setIsScanning(false);
+        setIsRepairing(true);
+        
+        try {
+          const response = await apiFetch('/api/auth/init', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId, email: brand.email })
+          });
+          const repairData = await response.json();
+          
+          if (repairData.credits > 0) {
+            addLog("ENERGY_RESTORED: Neural link synchronized. Retrying scan...", "system");
+            setIsRepairing(false);
+            setTimeout(() => handleScan(), 1000);
+            return;
+          } else {
+            addLog("REPAIR_FAILED: Insufficient energy units. Please check Settings.", "error");
+          }
+        } catch (repairErr) {
+          addLog("REPAIR_FAILED: Connection to energy core lost.", "error");
+        }
+        setIsRepairing(false);
+        return;
+      }
+
+      if (errorMsg.includes("PERMISSION_DENIED") || errorMsg.includes("403")) {
+        addLog("CRITICAL_ERR: SIGNAL_FORBIDDEN.", "error");
+        addLog("Cause: AI Service Access Denied (403).", "error");
+        addLog("Action: Ensure Vertex AI API is enabled and Service Account has 'Vertex AI User' role.", "warn");
+        setIsScanning(false);
+        return;
+      }
+
+      addLog(`CRITICAL_ERR: SIGNAL_INTERRUPTED.`, "error");
+      addLog(`Cause: ${errorMsg}`, "error");
       console.error("Scan Error Details:", e);
     } finally {
       setIsScanning(false);
@@ -272,25 +286,25 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 2 && (
             <motion.div key="step2" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-10 rounded-3xl border-[#8C4DFF]/20 shadow-2xl">
-                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">2. DNA MARKI</h2>
+                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">2. {t.onboarding.step2}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Nazwa Marki</label>
+                    <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.onboarding.brandName}</label>
                     <input type="text" value={brand.name} onChange={e => updateBrand({ name: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF] text-white" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Branża</label>
+                    <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.onboarding.industry}</label>
                     <input type="text" value={brand.industry} onChange={e => updateBrand({ industry: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 outline-none focus:border-[#8C4DFF] text-white" />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Opis Marki (Brand Bio)</label>
-                  <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} placeholder="Szczegółowy opis marki, który AI wykorzysta do personalizacji postów..." className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[160px] resize-none text-sm outline-none focus:border-[#8C4DFF] text-white/80" />
+                  <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.onboarding.brandBio}</label>
+                  <textarea value={brand.description} onChange={e => updateBrand({ description: e.target.value })} placeholder={t.onboarding.brandBioPlaceholder} className="w-full bg-white/5 border border-white/10 rounded-xl p-4 min-h-[160px] resize-none text-sm outline-none focus:border-[#8C4DFF] text-white/80" />
                 </div>
               </div>
               <div className="flex gap-4">
                  <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl hover:bg-white/5 transition-all"><ChevronLeft /></button>
-                 <NeonButton variant="purple" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: LOOK</NeonButton>
+                 <NeonButton variant="purple" className="flex-1 py-5 font-black" onClick={handleStepNext}>{t.onboarding.nextLook}</NeonButton>
               </div>
             </motion.div>
           )}
@@ -298,10 +312,10 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 3 && (
             <motion.div key="step3" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-10 rounded-3xl border-[#C74CFF]/20 shadow-2xl">
-                <h2 className="text-3xl font-black font-orbitron mb-10 text-white uppercase tracking-widest text-center">3. TOŻSAMOŚĆ WIZUALNA</h2>
+                <h2 className="text-3xl font-black font-orbitron mb-10 text-white uppercase tracking-widest text-center">3. {t.onboarding.step3}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                    <div className="space-y-6">
-                      <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Logo Główne</label>
+                      <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.onboarding.mainLogo}</label>
                       <div className="aspect-square glass-panel border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center p-8 relative overflow-hidden group">
                         {brand.logos?.main ? (
                           <>
@@ -311,7 +325,7 @@ const Onboarding: React.FC = () => {
                         ) : (
                           <div className="flex flex-col items-center gap-4 cursor-pointer relative">
                             <CloudUpload size={40} className="text-[#34E0F7]" />
-                            <span className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">UPLOAD LOGO</span>
+                            <span className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.onboarding.uploadLogo}</span>
                             <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
@@ -325,7 +339,7 @@ const Onboarding: React.FC = () => {
                       </div>
                    </div>
                    <div className="space-y-6">
-                      <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">Paleta Kolorów</label>
+                      <label className="text-[10px] font-orbitron text-white/40 uppercase tracking-widest">{t.onboarding.palette}</label>
                       <div className="grid grid-cols-1 gap-4">
                         {brand.colors.map((c, i) => (
                           <div key={i} className="flex items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/10">
@@ -341,7 +355,7 @@ const Onboarding: React.FC = () => {
               </div>
               <div className="flex gap-4">
                  <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
-                 <NeonButton variant="magenta" className="flex-1 py-5 font-black" onClick={handleStepNext} disabled={!brand.logos?.main}>NASTĘPNY ETAP: VOICE</NeonButton>
+                 <NeonButton variant="magenta" className="flex-1 py-5 font-black" onClick={handleStepNext} disabled={!brand.logos?.main}>{t.onboarding.nextVoice}</NeonButton>
               </div>
             </motion.div>
           )}
@@ -349,7 +363,7 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 4 && (
             <motion.div key="step4" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-10 rounded-3xl border-cyan-500/20 shadow-2xl">
-                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">4. GŁOS MARKI</h2>
+                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">4. {t.onboarding.step4}</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                   {['premium', 'warm', 'modern', 'storyteller'].map(tone => (
                     <button key={tone} onClick={() => updateBrand({ voiceProfile: tone as any })} className={`p-4 rounded-2xl border transition-all text-[10px] font-orbitron uppercase tracking-widest ${brand.voiceProfile === tone ? 'border-[#34E0F7] bg-[#34E0F7]/10 text-[#34E0F7]' : 'border-white/5 text-white/30 hover:bg-white/5'}`}>
@@ -361,8 +375,8 @@ const Onboarding: React.FC = () => {
                    <div className="flex items-center gap-6">
                       <YodaIcon active={brand.isYodaMode} />
                       <div>
-                        <span className={`text-[11px] font-orbitron uppercase tracking-[0.2em] font-black block ${brand.isYodaMode ? 'text-[#C74CFF]' : 'text-white/40'}`}>TRYB MISTRZA YODY</span>
-                        <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">Inverted syntax mode</span>
+                        <span className={`text-[11px] font-orbitron uppercase tracking-[0.2em] font-black block ${brand.isYodaMode ? 'text-[#C74CFF]' : 'text-white/40'}`}>{t.onboarding.yodaMode}</span>
+                        <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">{t.onboarding.yodaDesc}</span>
                       </div>
                    </div>
                    <div className={`w-12 h-6 rounded-full relative transition-colors ${brand.isYodaMode ? 'bg-[#C74CFF]' : 'bg-white/10'}`}>
@@ -372,7 +386,7 @@ const Onboarding: React.FC = () => {
               </div>
               <div className="flex gap-4">
                  <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
-                 <NeonButton variant="cyan" className="flex-1 py-5 font-black" onClick={handleStepNext}>NASTĘPNY ETAP: SYNC</NeonButton>
+                 <NeonButton variant="cyan" className="flex-1 py-5 font-black" onClick={handleStepNext}>{t.onboarding.nextSync}</NeonButton>
               </div>
             </motion.div>
           )}
@@ -380,7 +394,7 @@ const Onboarding: React.FC = () => {
           {onboardingStep === 5 && (
             <motion.div key="step5" initial={{ opacity: 0, x: 100 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -100 }} className="space-y-8">
               <div className="glass-panel p-10 rounded-3xl border-white/5 shadow-2xl">
-                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">5. WĘZŁY KOMUNIKACYJNE</h2>
+                <h2 className="text-3xl font-black font-orbitron mb-8 text-white uppercase tracking-widest text-center">5. {t.onboarding.step5}</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {['instagram', 'facebook', 'linkedin', 'tiktok'].map(p => (
                     <div key={p} onClick={() => toggleSocialLink(p)} className={`p-6 rounded-2xl border-2 cursor-pointer transition-all flex items-center justify-between ${socialLinks[p as keyof typeof socialLinks] ? 'border-[#34E0F7] bg-[#34E0F7]/5' : 'border-white/5'}`}>
@@ -393,7 +407,7 @@ const Onboarding: React.FC = () => {
               </div>
               <div className="flex gap-4">
                  <button onClick={handleStepBack} className="p-4 border border-white/10 rounded-2xl"><ChevronLeft /></button>
-                 <NeonButton variant="cyan" className="flex-1 py-6 font-black text-xl shadow-[0_0_50px_rgba(52,224,247,0.4)]" onClick={finalizeMission}>ODPAL MISJĘ <Rocket className="ml-2 inline" /></NeonButton>
+                 <NeonButton variant="cyan" className="flex-1 py-6 font-black text-xl shadow-[0_0_50px_rgba(52,224,247,0.4)]" onClick={finalizeMission}>{t.onboarding.launchMission} <Rocket className="ml-2 inline" /></NeonButton>
               </div>
             </motion.div>
           )}

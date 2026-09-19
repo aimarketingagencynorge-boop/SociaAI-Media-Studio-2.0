@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { prepareBrandImage } from '../brandImage';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Palette, 
@@ -118,14 +119,11 @@ const BrandKit: React.FC = () => {
     return Math.min(score, 100);
   }, [brand]);
 
-  const handleLogoUpload = (type: 'main' | 'light' | 'dark', e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (type: 'main' | 'light' | 'dark', e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateBrand({ logos: { ...brand.logos, [type]: reader.result as string } });
-      };
-      reader.readAsDataURL(file);
+      try { updateBrand({ logos: { ...brand.logos, [type]: await prepareBrandImage(file, true) } }); }
+      catch (error) { triggerToast((error as Error).message); }
     }
   };
 
@@ -147,12 +145,7 @@ const BrandKit: React.FC = () => {
 
     for (const file of filesToProcess) {
       try {
-        const reader = new FileReader();
-        const imageData = await new Promise<string>((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+        const imageData = await prepareBrandImage(file);
 
         newImages.push({
           id: Math.random().toString(36).substr(2, 9),
@@ -169,6 +162,7 @@ const BrandKit: React.FC = () => {
         });
       } catch (err) {
         console.error("Error reading file:", file.name, err);
+        triggerToast(`${file.name}: ${(err as Error).message}`);
       }
     }
     
@@ -235,7 +229,7 @@ const BrandKit: React.FC = () => {
       triggerToast(t.brandKit.dnaRefinedByAI);
     } catch (e) {
       console.error(e);
-      alert(t.brandKit.dnaRefinementFailed);
+      triggerToast(t.brandKit.dnaRefinementFailed);
     } finally {
       setIsRefining(false);
     }
@@ -266,7 +260,7 @@ const BrandKit: React.FC = () => {
   );
 
   return (
-    <div className="h-screen overflow-y-auto custom-scrollbar relative bg-transparent">
+    <div className="relative bg-transparent">
       <div className="p-8 lg:p-12 max-w-[1500px] mx-auto space-y-16 pb-48">
         
         {/* HUD HEADER */}
@@ -707,7 +701,7 @@ const BrandKit: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 sm:gap-6">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
                 {(brand.referenceImages || []).map((image) => (
                   <motion.div 
                     layoutId={image.id}

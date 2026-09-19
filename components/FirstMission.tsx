@@ -1,0 +1,19 @@
+import React, { useState } from 'react';
+import { Rocket, CheckCircle2, Share2 } from 'lucide-react';
+import { useStore } from '../store';
+import { STARTER_CREDITS, WEEK_PLAN_COST, IMAGE_WITH_BRIEF_COST } from '../launchOffer';
+
+export default function FirstMission({ onGenerate }: { onGenerate: () => void }) {
+  const { posts, brand, aiSettings, isAutopilotRunning, setActiveView } = useStore();
+  const [message, setMessage] = useState('');
+  const hasImage = posts.some(p => p.imagePreviewUrl);
+  const balance = aiSettings?.creditBalance ?? 0;
+  const expired = !!aiSettings?.billingAccessUntil && Date.parse(aiSettings.billingAccessUntil) <= Date.now();
+  return <section className="relative max-w-[1400px] mx-auto rounded-3xl p-6 md:p-8 border border-cyan-300/20 bg-gradient-to-br from-cyan-400/10 to-violet-500/10">
+    <div className="flex flex-wrap items-start justify-between gap-5"><div><p className="text-cyan-300 text-xs tracking-widest font-mono">TWOJA PIERWSZA MISJA</p><h2 className="text-2xl font-bold text-white mt-2">{posts.length ? `${brand.name}: misja w toku` : 'Od pomysłu do tygodnia treści'}</h2><p className="text-slate-400 text-sm mt-3 max-w-xl">Pierwsza próba: {STARTER_CREDITS} FC / 7 dni po rejestracji karty, potem 49 zł/mies. Plan 7 postów: {WEEK_PLAN_COST} FC. Grafika z przygotowaniem promptu: zwykle {IMAGE_WITH_BRIEF_COST} FC. Pobieranie i edycja ręczna są bezpłatne.</p></div><div className="text-right text-cyan-200"><span className="text-3xl font-bold">{balance}</span><span className="ml-2">FC</span><p className="text-xs text-slate-400 mt-1">aktualne saldo</p></div></div>
+    <ol className="grid md:grid-cols-3 gap-3 my-6">{[[true, '1. Ustaw DNA marki', 'Oferta, odbiorcy i język.'], [posts.length > 0, '2. Przygotuj posty', 'Przejrzyj teksty i dopasuj je do siebie.'], [hasImage, '3. Dodaj grafikę', 'Przy poście wybierz generowanie obrazu.']].map(([done, title, description]) => <li key={String(title)} className="rounded-xl border border-white/10 p-4"><p className="flex gap-2 text-sm text-white">{done && <CheckCircle2 size={17} className="text-cyan-300"/>}{title}</p><p className="text-xs text-slate-400 mt-2">{description}</p></li>)}</ol>
+    <div className="flex flex-wrap gap-3">{!aiSettings?.starterCreditsGranted && <button onClick={() => setActiveView('store')} className="bg-violet-500 text-white font-semibold px-5 py-3 rounded-xl">Zarejestruj kartę i aktywuj próbę</button>}<button onClick={posts.length ? () => setActiveView('planner') : onGenerate} disabled={isAutopilotRunning || (!posts.length && aiSettings?.activeSource !== 'user_api_key' && (balance < WEEK_PLAN_COST || expired))} className="bg-cyan-300 text-slate-950 font-semibold px-5 py-3 rounded-xl flex gap-2 items-center disabled:opacity-40"><Rocket size={18}/>{isAutopilotRunning ? 'Przygotowuję plan…' : posts.length ? 'Zobacz swój kalendarz' : `Stwórz pierwsze 7 postów · ${WEEK_PLAN_COST} FC`}</button><button onClick={() => setActiveView('brand-kit')} className="border border-white/15 text-slate-200 rounded-xl px-4 py-3">Uzupełnij DNA marki</button><button onClick={async () => { try { await navigator.clipboard.writeText(`${window.location.origin}/?workshop=1`); setMessage('Link do bezpłatnego warsztatu skopiowany.'); } catch { setMessage('Nie udało się skopiować. Udostępnij adres strony z przeglądarki.'); } }} className="text-slate-300 px-4 py-3 flex gap-2 items-center"><Share2 size={17}/> Poleć SociAI</button></div>
+    <p role="status" className="text-sm text-cyan-200 mt-3">{message}</p>
+    {(balance < WEEK_PLAN_COST || expired) && aiSettings?.activeSource !== 'user_api_key' && <p className="text-sm text-amber-200">Brakuje aktywnych kredytów. Sprawdź rejestrację karty i abonament w panelu płatności. Zachowujesz dostęp do zapisanych treści i eksportu.</p>}
+  </section>;
+}

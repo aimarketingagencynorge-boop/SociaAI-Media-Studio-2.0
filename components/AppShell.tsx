@@ -49,13 +49,13 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   ];
 
   const missionDays = [
-    { id: 0, label: 'PONIEDZIAŁEK' },
-    { id: 1, label: 'WTOREK' },
-    { id: 2, label: 'ŚRODA' },
-    { id: 3, label: 'CZWARTEK' },
-    { id: 4, label: 'PIĄTEK' },
-    { id: 5, label: 'SOBOTA' },
-    { id: 6, label: 'NIEDZIELA' },
+    { id: 0, label: t.days.monday.toUpperCase() },
+    { id: 1, label: t.days.tuesday.toUpperCase() },
+    { id: 2, label: t.days.wednesday.toUpperCase() },
+    { id: 3, label: t.days.thursday.toUpperCase() },
+    { id: 4, label: t.days.friday.toUpperCase() },
+    { id: 5, label: t.days.saturday.toUpperCase() },
+    { id: 6, label: t.days.sunday.toUpperCase() },
   ];
 
   const scrollToDay = (dayId: number) => {
@@ -66,7 +66,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       if (element) {
         element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
-    }, 150);
+    }, 300);
     timeoutsRef.current.push(timeout);
   };
 
@@ -110,7 +110,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     {aiSettings?.creditBalance || 0}
                   </span>
                 )}
-                <span className="text-[8px] font-mono text-white/30">CR</span>
+                <span className="text-[8px] font-mono text-white/30">FC</span>
               </div>
             </div>
           </div>
@@ -126,7 +126,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 onClick={() => {
                   setActiveView(item.id);
                   if (item.id === 'dashboard') setIsDayMenuOpen(!isDayMenuOpen);
-                  if (item.id !== 'dashboard') setIsMobileMenuOpen(false);
+                  setIsMobileMenuOpen(false);
                 }}
                 className={`w-full group relative flex items-center gap-4 px-5 py-4 rounded-xl transition-all duration-300 border border-transparent ${
                   isActive 
@@ -149,7 +149,7 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     <button 
                       key={day.id}
                       onClick={() => scrollToDay(day.id)}
-                      className="w-full text-left py-2 px-3 text-[9px] font-orbitron text-white/20 hover:text-[#34E0F7] transition-all uppercase tracking-widest font-bold"
+                      className="w-full text-left py-2 px-3 text-[11px] font-orbitron text-white/20 hover:text-[#34E0F7] transition-all uppercase tracking-widest font-bold"
                     >
                       {day.label}
                     </button>
@@ -179,19 +179,21 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 
   return (
-    <div className="flex h-screen bg-[#0A0A12] backdrop-blur-sm overflow-hidden flex-col md:flex-row relative">
-      <div className="grid-overlay pointer-events-none opacity-40"></div>
+    <div className="flex h-screen bg-[#050508] crt-flicker overflow-hidden flex-col md:flex-row relative">
+      <div className="scanline" />
+      <div className="vignette" />
+      <div className="grid-overlay pointer-events-none opacity-20"></div>
       
       {/* Mobile Top Header */}
-      <header className="md:hidden flex h-16 items-center justify-between px-6 border-b border-white/10 glass-panel bg-black/60 z-[60]">
-        <h1 className="text-lg font-black font-orbitron tracking-tighter bg-gradient-to-r from-[#8C4DFF] to-[#34E0F7] bg-clip-text text-transparent">
+      <header className="md:hidden flex h-14 items-center justify-between px-6 border-b border-white/5 glass-panel bg-black/80 z-[60]">
+        <h1 className="text-base font-black font-orbitron tracking-tighter bg-gradient-to-r from-[#8C4DFF] to-[#34E0F7] bg-clip-text text-transparent">
           SociAI STUDIO
         </h1>
         <button 
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           className="p-2 text-[#34E0F7] hover:bg-white/5 rounded-lg transition-all"
         >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </header>
 
@@ -211,11 +213,11 @@ const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       </AnimatePresence>
       
       {/* Sidebar Cockpit (Desktop) */}
-      <aside className="hidden md:flex w-80 border-r border-white/10 flex-col p-8 glass-panel relative z-50 bg-black/40">
+      <aside className="hidden md:flex w-72 border-r border-white/5 flex-col p-6 glass-panel relative z-50 bg-black/60">
         <NavContent />
       </aside>
 
-      <main className="flex-1 relative overflow-hidden bg-[#0A0A12]/50 backdrop-blur-md">
+      <main className="flex-1 min-h-0 w-full relative overflow-y-auto custom-scrollbar bg-[#050508]/50 backdrop-blur-sm scroll-smooth" style={{ WebkitOverflowScrolling: 'touch' }}>
         {children}
       </main>
     </div>

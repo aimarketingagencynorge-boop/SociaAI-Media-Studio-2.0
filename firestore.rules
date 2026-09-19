@@ -59,8 +59,8 @@ service cloud.firestore {
     // User profiles
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && request.auth.uid == userId && !('role' in request.resource.data);
-      allow update: if (isOwner(userId) && (request.resource.data.role == resource.data.role || isAdmin())) || isAdmin();
+      allow create: if isOwner(userId) && !request.resource.data.keys().hasAny(['role', 'credits', 'workspaceId', 'geminiApiKey']);
+      allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'credits', 'workspaceId', 'uid', 'geminiApiKey']);
 
       match /brands/{brandId} {
         allow read, write: if isOwner(userId) || isAdmin();
@@ -89,12 +89,12 @@ service cloud.firestore {
 
     // Workspaces
     match /workspaces/{workspaceId} {
-      allow read: if isWorkspaceMember(workspaceId) || isAdmin() || isOwner(workspaceId);
+      allow read: if isAdmin() || isOwner(workspaceId);
       // Only server-side or admin can create/update sensitive fields
-      allow write: if isAdmin() || isOwner(workspaceId);
+      allow write: if false; // Only the authenticated server controls balances and settings.
       
       match /transactions/{historyId} {
-        allow read: if isWorkspaceMember(workspaceId) || isAdmin() || isOwner(workspaceId);
+        allow read: if isAdmin() || isOwner(workspaceId);
         allow write: if false; // Only server can write history
       }
     }

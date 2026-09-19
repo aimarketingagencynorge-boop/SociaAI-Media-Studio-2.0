@@ -111,7 +111,8 @@ export interface SocialPost {
   hook: string; 
   content: string;
   hashtags: string[];
-  status: 'draft' | 'scheduled' | 'sent';
+  status: 'draft' | 'scheduled' | 'sent' | 'exported';
+  plannedDate?: string;
   isApproved: boolean;
   imageBrief: string; 
   imagePrompt?: string; 
@@ -159,6 +160,11 @@ export type AISource = 'starter_credits' | 'purchased_credits' | 'user_api_key';
 export type UserApiKeyStatus = 'missing' | 'saved' | 'valid' | 'invalid';
 
 export interface AIAccessSettings {
+  billingAccessUntil?: string;
+  subscriptionStatus?: string;
+  subscriptionId?: string;
+  trialStatus?: string;
+  cancelAtPeriodEnd?: boolean;
   workspaceId: string;
   aiProvider: 'gemini';
   activeSource: AISource;

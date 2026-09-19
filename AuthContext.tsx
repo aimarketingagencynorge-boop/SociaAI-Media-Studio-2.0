@@ -1,3 +1,4 @@
+import { apiFetch } from './apiClient';
 
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
@@ -26,8 +27,10 @@ export const useAuth = () => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initError, setInitError] = useState<string | null>(null);
   const [initStatus, setInitStatus] = useState<'idle' | 'auth' | 'firestore' | 'workspace' | 'ready'>('idle');
   const unsubscribers = useRef<(() => void)[]>([]);
+  const initCalled = useRef(false);
 
   const clearFirestoreSubscriptions = () => {
     unsubscribers.current.forEach((unsub: () => void) => unsub());
@@ -54,6 +57,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setInitStatus('auth');
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       clearFirestoreSubscriptions();
+      initCalled.current = false;
+      setInitError(null);
+      if (useStore.getState().userId !== (user?.uid || '')) {
+        useStore.getState().resetMission();
+        useStore.setState({ posts: [], mediaAssets: [], studioAssets: [], integrations: [], webhookUrl: '', workspaceId: '', aiSettings: null, credits: 0 });
+      }
       setCurrentUser(user);
       setFirebaseUser(user);
       setAuthenticated(!!user);
@@ -63,21 +72,45 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setInitStatus('firestore');
         
         // 1. Initialize user on backend (Auth Init)
-        const initUser = async () => {
-          try {
-            setIsLoadingAICredits(true);
-            const response = await fetch('/api/auth/init', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: user.uid, email: user.email })
-            });
-            const data = await response.json();
-            if (data.workspaceId) {
-              setWorkspaceId(data.workspaceId);
+        const initUser = async (retries = 3, delay = 1500) => {
+          if (initCalled.current) return;
+          
+          for (let i = 0; i < retries; i++) {
+            try {
+              setIsLoadingAICredits(true);
+              const response = await apiFetch('/api/auth/init', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.uid, email: user.email })
+              });
+              
+              if (!response.ok) {
+                const problem = await response.json().catch(() => ({}));
+                throw new Error(problem.error || 'Serwer API zwrócił nieprawidłową odpowiedź.');
+              }
+
+              const contentType = response.headers.get("content-type");
+              if (contentType && contentType.includes("application/json")) {
+                const data = await response.json();
+                if (data.workspaceId) {
+                  setWorkspaceId(data.workspaceId);
+                }
+                initCalled.current = true;
+                return;
+              } else {
+                throw new Error('Serwer API nie zwrócił odpowiedzi JSON.');
+              }
+            } catch (err) {
+              if (i === retries - 1) {
+                console.error("[Auth Init] Failed to init user credits after retries:", err);
+                setIsLoadingAICredits(false);
+                setLoading(false);
+                setInitError(err instanceof Error ? err.message : "Nie udało się połączyć z kontem. Spróbuj ponownie.");
+              } else {
+                console.warn(`[Auth Init] Attempt ${i + 1} failed, retrying in ${delay}ms...`, err);
+                await new Promise(res => setTimeout(res, delay));
+              }
             }
-          } catch (err) {
-            console.error("[Auth Init] Failed to init user credits:", err);
-            setIsLoadingAICredits(false);
           }
         };
         initUser();
@@ -190,6 +223,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unsubscribers.current.push(unsubscribeStudioAssets);
 
       } else {
+        setUserId('');
         setAiSettings(null);
         setWorkspaceId('');
         setIsLoadingAICredits(false);
@@ -255,7 +289,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {initError ? <div className="min-h-screen flex flex-col items-center justify-center gap-6 text-white p-8"><p role="alert">{initError}</p><button onClick={() => window.location.reload()}>Ponów połączenie</button><a href="/?workshop=1" className="text-cyan-300 underline">Przejdź do warsztatu bez logowania</a><button onClick={logout}>Wyloguj</button></div> : loading ? <div role="status" className="min-h-screen flex items-center justify-center text-cyan-300">Łączenie ze stacją SociAI…</div> : children}
     </AuthContext.Provider>
   );
 };

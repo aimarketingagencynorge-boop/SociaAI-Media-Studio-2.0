@@ -1,3 +1,5 @@
+import FirstMission from './FirstMission';
+import { missionDate } from '../missionDates';
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -65,21 +67,22 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const days = [
-    { name: t.days.mon.toUpperCase(), id: 0, date: '11.11' },
-    { name: t.days.tue.toUpperCase(), id: 1, date: '12.11' },
-    { name: t.days.wed.toUpperCase(), id: 2, date: '13.11' },
-    { name: t.days.thu.toUpperCase(), id: 3, date: '14.11' },
-    { name: t.days.fri.toUpperCase(), id: 4, date: '15.11' },
-    { name: t.days.sat.toUpperCase(), id: 5, date: '16.11' },
-    { name: t.days.sun.toUpperCase(), id: 6, date: '17.11' },
+    { name: t.days.mon.toUpperCase(), id: 0, date: missionDate(0).slice(5) },
+    { name: t.days.tue.toUpperCase(), id: 1, date: missionDate(1).slice(5) },
+    { name: t.days.wed.toUpperCase(), id: 2, date: missionDate(2).slice(5) },
+    { name: t.days.thu.toUpperCase(), id: 3, date: missionDate(3).slice(5) },
+    { name: t.days.fri.toUpperCase(), id: 4, date: missionDate(4).slice(5) },
+    { name: t.days.sat.toUpperCase(), id: 5, date: missionDate(5).slice(5) },
+    { name: t.days.sun.toUpperCase(), id: 6, date: missionDate(6).slice(5) },
   ];
 
   const handleGenerateWeek = async () => {
+    if (useStore.getState().isAutopilotRunning) return;
     setAutopilotRunning(true);
     setError(null);
     try {
       const newPosts = await gemini.generateWeeklyPlan(brand, brand.contentLanguage, 0);
-      setWeeklyPlan(newPosts);
+      setWeeklyPlan([...posts, ...newPosts]);
       
       // Trigger event for each new post
       newPosts.forEach(post => {
@@ -105,6 +108,7 @@ const Dashboard: React.FC = () => {
       id: Math.random().toString(36).substr(2, 9),
       weekIndex: 0,
       dayIndex: dayId,
+      plannedDate: missionDate(dayId),
       platform,
       topic: t.dashboard.newPostTopic,
       hook: t.dashboard.newPostHook,
@@ -200,6 +204,13 @@ const Dashboard: React.FC = () => {
         }
       }
     });
+  };
+
+  const downloadPostText = (post: SocialPost) => {
+    const text = [post.content, post.hashtags?.map(tag => tag.startsWith('#') ? tag : `#${tag}`).join(' ')].filter(Boolean).join('\n\n');
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+    const link = document.createElement('a'); link.href = url; link.download = `${post.platform}-post.txt`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const downloadPostImage = async (post: SocialPost) => {
@@ -298,18 +309,21 @@ const Dashboard: React.FC = () => {
       link.click();
     } catch (error) {
       console.error('Failed to export image:', error);
+      setError('Nie udało się pobrać grafiki. Spróbuj ponownie.');
     }
   };
 
   const handleTransmit = async (post: SocialPost) => {
-    if (!post.isApproved) return;
+    if (!post.isApproved || transmittingId) return;
     setTransmittingId(post.id);
     setHyperspace(true);
     
     try {
-      // 1. Legacy direct webhook call
+      const destinations = useStore.getState().integrations.filter(i => i.isEnabled && i.events.includes('export_to_external'));
+      if (!webhookUrl && !destinations.length) throw new Error('Najpierw skonfiguruj połączenie w Integracjach albo pobierz gotowy post.');
+      // Send only to destinations explicitly configured by the user.
       if (webhookUrl) {
-        await fetch(webhookUrl, {
+        const delivery = await fetch(webhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -321,11 +335,12 @@ const Dashboard: React.FC = () => {
             lang: brand.contentLanguage
           })
         });
+        if (!delivery.ok) throw new Error(`Eksport nieudany (${delivery.status}).`);
       }
 
       // 2. New Integration Layer
       await triggerOutboundEvent({
-        eventType: 'post_sent',
+        eventType: 'export_to_external',
         platform: post.platform,
         postId: post.id,
         content: post.content,
@@ -339,7 +354,7 @@ const Dashboard: React.FC = () => {
       });
 
       const timeout = setTimeout(() => {
-        updatePost(post.id, { status: 'scheduled', isApproved: false });
+        updatePost(post.id, { status: 'exported', isApproved: false });
         setHyperspace(false);
         setTransmittingId(null);
       }, 2000);
@@ -363,11 +378,14 @@ const Dashboard: React.FC = () => {
   );
 
   return (
-    <div className="flex h-full bg-[#0A0A12] flex-col overflow-hidden relative">
+    <div className="flex h-full bg-[#050508] flex-col overflow-hidden relative crt-flicker">
       <AnimatePresence>{isHyperspaceActive && <Hyperspace />}</AnimatePresence>
+      <div className="scanline" />
+      <div className="vignette" />
       
       {/* MAIN AREA */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 space-y-12 md:space-y-20 pb-48">
+      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8 space-y-8 md:space-y-12 pb-48">
+        <FirstMission onGenerate={handleGenerateWeek} />
         {error && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
@@ -409,16 +427,16 @@ const Dashboard: React.FC = () => {
           const dayPosts = posts.filter((p) => p.dayIndex === day.id);
           
           return (
-            <section key={day.id} id={`day-${day.id}`} className="max-w-[1400px] mx-auto">
+            <section key={day.id} id={`day-${day.id}`} className="max-w-[1400px] mx-auto scroll-mt-20">
               {/* DAY HEADER HUD */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 mb-8">
-                <h3 className="text-xl md:text-3xl font-black font-orbitron tracking-[0.1em] md:tracking-[0.2em] text-white whitespace-nowrap">
-                  {day.name} <span className="mx-2 md:mx-4 text-white/20 font-light">/</span> <span className="text-[#34E0F7]">{day.date}</span>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 mb-6">
+                <h3 className="text-lg md:text-2xl font-black font-orbitron tracking-[0.1em] md:tracking-[0.2em] text-white whitespace-nowrap">
+                  {day.name} <span className="mx-2 md:mx-3 text-white/10 font-light">/</span> <span className="text-[#34E0F7]">{day.date}</span>
                 </h3>
-                <div className="hidden sm:block h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
-                <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto relative">
-                  <span className="text-[8px] md:text-[10px] font-mono text-white/20 tracking-[0.1em] md:tracking-[0.2em] uppercase flex items-center gap-2">
-                    <Globe size={10} className="shrink-0" /> {t.dashboard.signal}: {brand.contentLanguage}
+                <div className="hidden sm:block h-[1px] flex-1 bg-gradient-to-r from-white/5 to-transparent" />
+                <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto relative">
+                  <span className="text-[7px] md:text-[9px] font-mono text-white/10 tracking-[0.1em] md:tracking-[0.2em] uppercase flex items-center gap-2">
+                    <Globe size={8} className="shrink-0" /> {t.dashboard.signal}: {brand.contentLanguage}
                   </span>
                   
                   <div className="relative">
@@ -464,13 +482,13 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* MISSION CARDS */}
-              <div className="space-y-8 md:space-y-12">
+              <div className="space-y-6 md:space-y-8">
                 {dayPosts.map((post) => (
                   <div key={post.id} className="relative group">
-                    <div className={`glass-panel rounded-[1.5rem] md:rounded-[2rem] overflow-hidden flex flex-col lg:flex-row border-white/10 shadow-2xl transition-all duration-500 bg-black/20 ${post.isApproved ? 'ring-2 ring-[#34E0F7] border-[#34E0F7]/40 shadow-[0_0_30px_#34E0F722]' : 'hover:border-white/20'}`}>
+                    <div className={`glass-panel rounded-[1rem] md:rounded-[1.5rem] overflow-hidden flex flex-col lg:flex-row border-white/5 shadow-xl transition-all duration-500 bg-black/40 ${post.isApproved ? 'ring-1 ring-[#34E0F7]/40 border-[#34E0F7]/20 shadow-[0_0_20px_#34E0F711]' : 'hover:border-white/10'}`}>
                       
                       {/* LEFT: VISION PANEL */}
-                      <div className="lg:w-[480px] xl:w-[540px] relative shrink-0 aspect-square border-b lg:border-b-0 lg:border-r border-white/10">
+                      <div className="lg:w-[400px] xl:w-[460px] relative shrink-0 aspect-square border-b lg:border-b-0 lg:border-r border-white/5">
                           <SmartVision 
                             imageUrl={post.imagePreviewUrl} 
                             hookText={post.hook} 
@@ -500,25 +518,22 @@ const Dashboard: React.FC = () => {
                       </div>
 
                       {/* RIGHT: DATA PANEL */}
-                      <div className="flex-1 bg-black/40 p-6 md:p-10 flex flex-col">
+                      <div className="flex-1 bg-black/20 p-4 md:p-6 flex flex-col">
                          {/* Header Metadata */}
-                         <div className="flex items-center justify-between mb-6 md:mb-8">
-                            <div className="flex items-center gap-3 md:gap-5">
-                               <div className="p-2 md:p-3 bg-white/5 rounded-xl text-white/40 border border-white/10">
-                                  {post.platform === 'instagram' && <Instagram size={16} />}
-                                  {post.platform === 'facebook' && <Facebook size={16} />}
-                                  {post.platform === 'linkedin' && <Linkedin size={16} />}
-                                  {post.platform === 'tiktok' && <Music2 size={16} />}
-                                  {!['instagram', 'facebook', 'linkedin', 'tiktok'].includes(post.platform) && <Wifi size={16} />}
+                         <div className="flex items-center justify-between mb-4 md:mb-6">
+                            <div className="flex items-center gap-2 md:gap-4">
+                               <div className="p-1.5 md:p-2 bg-white/5 rounded-lg text-white/30 border border-white/5">
+                                  {post.platform === 'instagram' && <Instagram size={14} />}
+                                  {post.platform === 'facebook' && <Facebook size={14} />}
+                                  {post.platform === 'linkedin' && <Linkedin size={14} />}
+                                  {post.platform === 'tiktok' && <Music2 size={14} />}
+                                  {!['instagram', 'facebook', 'linkedin', 'tiktok'].includes(post.platform) && <Wifi size={14} />}
                                </div>
                                <div>
-                                  <h4 className="text-[11px] md:text-[14px] font-black font-orbitron text-white uppercase tracking-[0.1em]">{(post.platform || t.dashboard.social).toUpperCase()} {t.dashboard.campaign}</h4>
-                                  <div className="flex flex-col gap-0.5 mt-1">
-                                     <p className="text-[7px] md:text-[8px] font-mono text-[#34E0F7]/60 uppercase tracking-widest">
+                                  <h4 className="text-[10px] md:text-[12px] font-black font-orbitron text-white uppercase tracking-[0.1em]">{(post.platform || t.dashboard.social).toUpperCase()} {t.dashboard.campaign}</h4>
+                                  <div className="flex flex-col gap-0.5 mt-0.5">
+                                     <p className="text-[6px] md:text-[7px] font-mono text-[#34E0F7]/40 uppercase tracking-widest">
                                         {t.dashboard.targetPlatform}: {(post.platform || t.dashboard.unknown).toUpperCase()}
-                                     </p>
-                                     <p className="text-[7px] md:text-[8px] font-mono text-white/20 uppercase tracking-widest">
-                                        {t.dashboard.transmissionTarget}: {post.platform === 'tiktok' ? 'MOBILE_STREAM' : 'SOCIAL_API_V2'}
                                      </p>
                                   </div>
                                </div>
@@ -526,7 +541,7 @@ const Dashboard: React.FC = () => {
                          </div>
 
                          {/* Content Field */}
-                         <div className="relative mb-6 md:mb-10 flex-1">
+                         <div className="relative mb-4 md:mb-6 flex-1">
                             <AnimatePresence>
                                {regeneratingId === post.id && (regeneratingType === 'text' || regeneratingType === 'system') && (
                                  <motion.div
@@ -540,37 +555,36 @@ const Dashboard: React.FC = () => {
                                )}
                             </AnimatePresence>
                             <textarea 
-                              disabled={post.status !== 'draft'}
+                              disabled={!!regeneratingId}
                               value={post.content} 
                               onChange={(e) => updatePost(post.id, { content: e.target.value })}
-                              className="w-full bg-black/60 border border-white/10 rounded-2xl p-6 md:p-8 text-[12px] md:text-[13px] leading-relaxed text-white/70 min-h-[140px] md:min-h-[160px] outline-none focus:border-[#34E0F7] font-inter custom-scrollbar shadow-inner"
+                              className="w-full bg-black/40 border border-white/5 rounded-xl p-4 md:p-6 text-[10px] md:text-[11px] leading-relaxed text-white/60 min-h-[100px] md:min-h-[120px] outline-none focus:border-[#34E0F7]/40 font-inter custom-scrollbar shadow-inner"
                             />
 
                             {/* Global Signature Quick Edit */}
-                            <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/5 space-y-3">
-                               <div className="flex items-center justify-between mb-2">
-                                  <span className="text-[8px] font-orbitron text-[#34E0F7] uppercase tracking-widest flex items-center gap-1">
-                                     <Globe size={10} /> {t.dashboard.globalSignature}
+                            <div className="mt-3 p-3 bg-white/5 rounded-lg border border-white/5 space-y-2">
+                               <div className="flex items-center justify-between mb-1">
+                                  <span className="text-[7px] font-orbitron text-[#34E0F7]/60 uppercase tracking-widest flex items-center gap-1">
+                                     <Globe size={8} /> {t.dashboard.globalSignature}
                                   </span>
-                                  <span className="text-[7px] font-mono text-white/20 uppercase">{t.dashboard.linkedToBrand}</span>
                                </div>
-                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                  <div className="space-y-1">
-                                     <label className="text-[7px] font-orbitron text-white/30 uppercase tracking-widest flex items-center gap-1"><MapPin size={8}/> {t.settings.addressLabel}</label>
+                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                  <div className="space-y-0.5">
+                                     <label className="text-[6px] font-orbitron text-white/20 uppercase tracking-widest flex items-center gap-1"><MapPin size={6}/> {t.settings.addressLabel}</label>
                                      <input 
                                        type="text"
                                        value={brand.address || ''}
                                        onChange={(e) => syncSignature({ address: e.target.value })}
-                                       className="w-full bg-transparent border-b border-white/10 text-[10px] text-white/60 focus:text-[#34E0F7] focus:border-[#34E0F7] outline-none transition-all font-mono py-1"
+                                       className="w-full bg-transparent border-b border-white/5 text-[9px] text-white/40 focus:text-[#34E0F7] focus:border-[#34E0F7]/40 outline-none transition-all font-mono py-0.5"
                                      />
                                   </div>
-                                  <div className="space-y-1">
-                                     <label className="text-[7px] font-orbitron text-white/30 uppercase tracking-widest flex items-center gap-1"><Phone size={8}/> {t.settings.phoneLabel}</label>
+                                  <div className="space-y-0.5">
+                                     <label className="text-[6px] font-orbitron text-white/20 uppercase tracking-widest flex items-center gap-1"><Phone size={6}/> {t.settings.phoneLabel}</label>
                                      <input 
                                        type="text"
                                        value={brand.phone || ''}
                                        onChange={(e) => syncSignature({ phone: e.target.value })}
-                                       className="w-full bg-transparent border-b border-white/10 text-[10px] text-white/60 focus:text-[#34E0F7] focus:border-[#34E0F7] outline-none transition-all font-mono py-1"
+                                       className="w-full bg-transparent border-b border-white/5 text-[9px] text-white/40 focus:text-[#34E0F7] focus:border-[#34E0F7]/40 outline-none transition-all font-mono py-0.5"
                                      />
                                   </div>
                                </div>
@@ -578,11 +592,11 @@ const Dashboard: React.FC = () => {
                          </div>
 
                          {/* Action Commands Row */}
-                         <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+                         <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4 md:mb-6">
                             {[
                               { label: t.dashboard.text, type: 'text' as const, cost: '5 FC', color: '#34E0F7' },
-                              { label: t.dashboard.vision, type: 'vision' as const, cost: '10 FC', color: '#8C4DFF' },
-                              { label: t.dashboard.system, type: 'system' as const, cost: '15 FC', color: '#C74CFF' }
+                              { label: t.dashboard.vision, type: 'vision' as const, cost: '30–35 FC', color: '#8C4DFF' },
+                              { label: t.dashboard.system, type: 'system' as const, cost: '35–40 FC', color: '#C74CFF' }
                             ].map((btn) => (
                               <button 
                                 key={btn.type}
@@ -600,13 +614,14 @@ const Dashboard: React.FC = () => {
                          </div>
 
                          {/* Status Control Row */}
-                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-5">
+                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-3">
                             <button 
                               onClick={() => updatePost(post.id, { showHook: !post.showHook })}
                               className={`py-3 md:py-4 rounded-xl md:rounded-2xl border text-[9px] md:text-[11px] font-orbitron font-black uppercase tracking-widest transition-all ${post.showHook ? 'bg-[#34E0F7]/10 border-[#34E0F7] text-[#34E0F7] shadow-[0_0_15px_#34E0F722]' : 'border-white/10 text-white/30'}`}
                             >
                                {t.dashboard.hook}: {post.showHook ? t.dashboard.on : t.dashboard.off}
                             </button>
+                            <button onClick={() => downloadPostText(post)} className="px-3 py-2 rounded-xl bg-white/10 text-white text-xs">Pobierz tekst</button>
                             <button 
                               onClick={() => updatePost(post.id, { isApproved: !post.isApproved })}
                               className={`py-3 md:py-4 rounded-xl md:rounded-2xl border text-[9px] md:text-[11px] font-orbitron font-black uppercase tracking-widest transition-all ${post.isApproved ? 'bg-white/10 border-white/40 text-white' : 'border-white/10 text-white/30 hover:border-white/40'}`}
@@ -618,7 +633,7 @@ const Dashboard: React.FC = () => {
                               onClick={() => handleTransmit(post)}
                               className={`py-3 md:py-4 rounded-xl md:rounded-2xl border text-[9px] md:text-[11px] font-orbitron font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 md:gap-3 ${post.isApproved ? 'bg-[#34E0F7] text-black border-[#34E0F7] shadow-[0_0_20px_#34E0F744]' : 'border-white/5 text-white/10 cursor-not-allowed'}`}
                             >
-                               <Send size={14} /> {t.dashboard.transmit}
+                               <Send size={14} /> Eksportuj do integracji
                             </button>
                          </div>
                       </div>
@@ -632,19 +647,19 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* FOOTER HUD */}
-      <footer className="fixed bottom-0 left-0 right-0 md:relative min-h-[100px] md:min-h-[140px] border-t border-white/10 bg-black/90 md:bg-black/80 backdrop-blur-3xl px-6 md:px-16 py-4 md:py-0 flex flex-col md:flex-row items-center justify-between z-[55] gap-4 md:gap-0">
-         <div className="flex items-center gap-6 md:gap-12 w-full md:w-auto">
-            <div className="flex flex-col gap-1 md:gap-3">
-               <div className="flex items-center gap-3 md:gap-4">
-                  <div className={`w-3 h-3 md:w-4 md:h-4 rounded-full ${approvedCount > 0 ? 'bg-[#34E0F7] glow-cyan shadow-[0_0_12px_#34E0F7]' : 'bg-white/10'}`} />
-                  <span className="text-[10px] md:text-[13px] font-orbitron font-black text-white uppercase tracking-[0.2em] md:tracking-[0.4em]">{t.dashboard.fleetReady}: {approvedCount} / 7</span>
+      <footer className="fixed bottom-0 left-0 right-0 md:relative min-h-[80px] md:min-h-[100px] border-t border-white/5 bg-black/95 md:bg-black/90 backdrop-blur-3xl px-4 md:px-12 py-3 md:py-0 flex flex-col md:flex-row items-center justify-between z-[55] gap-3 md:gap-0">
+         <div className="flex items-center gap-4 md:gap-8 w-full md:w-auto">
+            <div className="flex flex-col gap-0.5 md:gap-1.5">
+               <div className="flex items-center gap-2 md:gap-3">
+                  <div className={`w-2 h-2 md:w-3 md:h-3 rounded-full ${approvedCount > 0 ? 'bg-[#34E0F7] glow-cyan shadow-[0_0_8px_#34E0F7]' : 'bg-white/5'}`} />
+                  <span className="text-[8px] md:text-[11px] font-orbitron font-black text-white uppercase tracking-[0.2em] md:tracking-[0.3em]">{t.dashboard.fleetReady}: {approvedCount} / 7</span>
                </div>
-               <p className="text-[7px] md:text-[9px] font-mono text-white/20 uppercase tracking-[0.2em] md:tracking-[0.3em] hidden sm:block">{t.dashboard.signalsGreen}</p>
+               <p className="text-[6px] md:text-[8px] font-mono text-white/10 uppercase tracking-[0.2em] md:tracking-[0.3em] hidden sm:block">{t.dashboard.signalsGreen}</p>
             </div>
          </div>
-
-         <div className="hidden lg:flex flex-col items-center flex-1 max-w-md mx-8">
-            <p className="text-[10px] font-orbitron font-black text-[#34E0F7] uppercase tracking-[0.3em] mb-2">{t.dashboard.syncOptimal}</p>
+ 
+         <div className="hidden lg:flex flex-col items-center flex-1 max-w-sm mx-6">
+            <p className="text-[8px] font-orbitron font-black text-[#34E0F7]/60 uppercase tracking-[0.3em] mb-1.5">{t.dashboard.syncOptimal}</p>
             <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                <motion.div 
                  initial={{ width: 0 }}
@@ -653,15 +668,15 @@ const Dashboard: React.FC = () => {
                />
             </div>
          </div>
-
+ 
          <NeonButton 
            variant="cyan" 
            glow={approvedCount >= 1} 
            disabled={approvedCount < 1}
-           className="w-full md:w-auto py-4 md:py-6 flex items-center justify-center gap-4 text-sm md:text-base"
+           className="w-full md:w-auto py-3 md:py-4 flex items-center justify-center gap-3 text-xs md:text-sm"
            onClick={handleGenerateWeek}
          >
-            <Rocket size={20} className={approvedCount >= 7 ? 'animate-bounce' : ''} />
+            <Rocket size={16} className={approvedCount >= 7 ? 'animate-bounce' : ''} />
             <span className="font-black tracking-[0.05em] md:tracking-[0.1em]">{t.dashboard.initiateGlobalSync}</span>
          </NeonButton>
       </footer>

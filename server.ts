@@ -1,19 +1,29 @@
+import { createGenerationLimiter } from './serverRateLimit';
+import { installBilling } from './stripeBilling';
 import express from "express";
+import { authenticate, validateAIRequest, assertAIResult } from './serverPolicy';
+// Node 22+ loads local configuration; production may inject environment variables.
+try { process.loadEnvFile('.env.local'); } catch { /* optional */ }
+try { process.loadEnvFile('.env'); } catch { /* optional */ }
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import admin from "firebase-admin";
+import { getStorage, getDownloadURL } from "firebase-admin/storage";
 import { getFirestore } from "firebase-admin/firestore";
 import { GoogleGenAI, Modality } from "@google/genai";
+import { VertexAI } from "@google-cloud/vertexai";
+import { GoogleAuth } from "google-auth-library";
 import crypto from "crypto";
 import { AI_COSTS } from "./types.ts";
 import type { CreditTransaction, AIAccessSettings, AISource, CreditActionType } from "./types.ts";
 
 // Encryption Helpers
-const ENCRYPTION_KEY = process.env.AI_ENCRYPTION_KEY || 'a_very_secret_32_byte_key_for_ai_keys_123';
+const ENCRYPTION_KEY = process.env.AI_ENCRYPTION_KEY || '';
 const IV_LENGTH = 16;
 
 function encrypt(text: string) {
+  if (ENCRYPTION_KEY.length < 32) throw new Error('Set AI_ENCRYPTION_KEY to at least 32 random characters before saving user keys.');
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv('aes-256-cbc', Buffer.from(ENCRYPTION_KEY.padEnd(32).slice(0, 32)), iv);
   let encrypted = cipher.update(text);
@@ -46,14 +56,14 @@ const __dirname = path.dirname(__filename);
 // Initialize Firebase Admin
 const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig.projectId;
 const rawConfigDbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
-const configDbId = (rawConfigDbId && rawConfigDbId !== "(default)") ? rawConfigDbId : "ai-studio-da2c7ce8-8cbd-4a4d-a1f0-c740600206e8";
+const configDbId = rawConfigDbId || "(default)";
 
 // Force environment variables to match the target project
 process.env.GOOGLE_CLOUD_PROJECT = projectId;
 process.env.GCLOUD_PROJECT = projectId;
 process.env.GCP_PROJECT = projectId;
 
-if (!configDbId || configDbId === "(default)") {
+if (!configDbId) {
   console.error("CRITICAL: Firestore Database ID is missing or set to (default).");
 }
 
@@ -139,6 +149,7 @@ async function resolveAiAccess(workspaceId: string): Promise<{
   cost: number;
   error?: string;
   status?: number;
+  useAdc?: boolean;
 }> {
   console.log(`[AI Access] Resolving access for workspaceId: ${workspaceId}`);
   const workspaceRef = db.collection("workspaces").doc(workspaceId);
@@ -150,9 +161,12 @@ async function resolveAiAccess(workspaceId: string): Promise<{
   }
 
   const settings: AIAccessSettings = workspaceSnap.data() as AIAccessSettings;
+  const secretSnap = await db.collection('workspaceSecrets').doc(workspaceId).get();
+  settings.userApiKeyEncrypted = secretSnap.data()?.userApiKeyEncrypted || settings.userApiKeyEncrypted;
   console.log(`[AI Access] Workspace data for ${workspaceId}: creditBalance=${settings.creditBalance}, activeSource=${settings.activeSource}, starterCreditsGranted=${settings.starterCreditsGranted}`);
   
   const masterKey = process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY;
+  console.log(`[AI Access] Master Key Present: ${!!masterKey}`);
 
   // Mode 1: User's own API key
   if (settings.activeSource === 'user_api_key') {
@@ -165,6 +179,9 @@ async function resolveAiAccess(workspaceId: string): Promise<{
       }
     }
     
+    if (settings.billingAccessUntil && Date.parse(settings.billingAccessUntil) <= Date.now()) {
+      return { apiKey: '', source: settings.activeSource, cost: 0, error: 'Okres dostępu AI zakończył się. Sprawdź abonament.', status: 402 };
+    }
     // Fallback to Master Key if user key is selected but invalid/missing
     if (masterKey) {
       console.log(`[AI Access] User key invalid/missing, falling back to Master Key. Balance: ${settings.creditBalance}`);
@@ -185,6 +202,9 @@ async function resolveAiAccess(workspaceId: string): Promise<{
     return { apiKey: "", source: "user_api_key", cost: 0, error: "User API key is not valid or missing", status: 400 };
   }
 
+  if (settings.billingAccessUntil && Date.parse(settings.billingAccessUntil) <= Date.now()) {
+    return { apiKey: '', source: settings.activeSource, cost: 0, error: 'Okres dostępu AI zakończył się. Sprawdź abonament w panelu płatności.', status: 402 };
+  }
   // Mode 2: Platform Credits (Starter or Purchased)
   if (!masterKey) {
     console.error(`[AI Access] Master Key missing from environment!`);
@@ -203,7 +223,7 @@ async function resolveAiAccess(workspaceId: string): Promise<{
   }
 
   console.log(`[AI Access] Using Master Key with credits. Remaining: ${settings.creditBalance}`);
-  return { apiKey: masterKey, source: settings.activeSource, cost: 0 };
+  return { apiKey: masterKey, source: settings.activeSource, cost: 0, useAdc: !masterKey };
 }
 
 async function startServer() {
@@ -212,24 +232,37 @@ async function startServer() {
   // Verification will happen on first request.
 
   const app = express();
-  // The PORT is hardcoded to 3000 in the AI Studio environment.
-  // We use process.env.PORT to support external deployments like Cloud Run.
+  const apiRouter = express.Router();
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
+  const billing = installBilling(db);
+  // Signature verification needs the unmodified request body, before the JSON parser.
+  app.post('/api/billing/webhook', express.raw({ type: 'application/json', limit: '1mb' }), billing.webhook);
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+  // Mount API Router
+  app.use('/api', apiRouter);
+
   // Request logger for API
-  app.use('/api', (req, res, next) => {
+  apiRouter.use((req, res, next) => {
     console.log(`[API Request] ${req.method} ${req.url}`);
     next();
   });
 
-  // Auth Initialization Endpoint (Grant starter credits)
-  app.post("/api/auth/init", async (req, res) => {
+  apiRouter.use(authenticate(token => admin.auth(firebaseApp).verifyIdToken(token)));
+
+  apiRouter.post('/billing/status', billing.status);
+  apiRouter.post('/billing/setup', createGenerationLimiter(), billing.setup);
+  apiRouter.post('/billing/subscribe', createGenerationLimiter(), billing.subscribe);
+  apiRouter.post('/billing/portal', createGenerationLimiter(), billing.portal);
+
+  // Registration creates an empty wallet. Verified billing webhooks grant credits.
+  apiRouter.post("/auth/init", async (req, res) => {
     try {
       const { userId, email } = req.body;
       if (!userId) return res.status(400).json({ error: "Missing userId" });
+      if (!req.body.emailVerified) return res.status(403).json({ error: 'Zaloguj się kontem Google ze zweryfikowanym adresem e-mail.' });
 
       // In this app, workspaceId is currently same as userId for simplicity
       const workspaceId = userId; 
@@ -237,115 +270,36 @@ async function startServer() {
       console.log(`[Auth Init] Request for userId: ${userId}, email: ${email}`);
       console.log(`[Auth Init] Using Firestore Project: ${projectId}, Database: ${configDbId}`);
 
-      const userRef = db.collection("users").doc(userId);
-      const workspaceRef = db.collection("workspaces").doc(workspaceId);
-      
-      console.log(`[Auth Init] Attempting to fetch user doc: users/${userId}`);
-      const userSnap = await userRef.get();
-      console.log(`[Auth Init] User doc fetched. Exists: ${userSnap.exists}`);
-      const STARTER_AMOUNT = 500;
-      const workspaceSnap = await workspaceRef.get();
-
-      // Initialize Workspace if not exists
-      if (!workspaceSnap.exists || !workspaceSnap.data()?.starterCreditsGranted) {
-        const initialSettings: AIAccessSettings = {
-          workspaceId,
-          aiProvider: 'gemini',
-          activeSource: 'starter_credits',
-          starterCreditsGranted: true,
-          creditBalance: STARTER_AMOUNT,
-          hasUserApiKey: false,
-          userApiKeyStatus: 'missing',
-          updatedAt: new Date().toISOString()
-        };
-
-        await workspaceRef.set(initialSettings);
-
-        // Record transaction
-        const historyRef = workspaceRef.collection("transactions").doc();
-        const transactionRecord: CreditTransaction = {
-          userId,
-          amount: STARTER_AMOUNT,
-          actionType: 'initial_grant',
-          source: 'starter',
-          description: 'Welcome starter credits!',
-          createdAt: new Date().toISOString()
-        };
-        await historyRef.set(transactionRecord);
-        
-        // Ensure user has workspaceId and credits field for frontend sync
-        await userRef.set({ 
-          uid: userId,
-          email: email || "",
-          workspaceId: workspaceId,
-          credits: STARTER_AMOUNT,
-          updatedAt: new Date().toISOString(),
-          brand: admin.firestore.FieldValue.delete(),
-          posts: admin.firestore.FieldValue.delete(),
-          mediaAssets: admin.firestore.FieldValue.delete(),
-          studioAssets: admin.firestore.FieldValue.delete()
-        }, { merge: true });
-
-        return res.json({ success: true, message: "Starter credits granted", credits: STARTER_AMOUNT, workspaceId });
-      }
-
-      // REPAIR LOGIC: If workspace exists but has 0 or missing credits and user is still in onboarding step 1
-      const workspaceData = workspaceSnap.data() as AIAccessSettings;
-      const userData = userSnap.data();
-      
-      const hasZeroCredits = workspaceData.creditBalance === 0 || workspaceData.creditBalance === undefined || workspaceData.creditBalance === null;
-      const isInOnboarding = !userData?.onboardingStep || userData.onboardingStep <= 2;
-
-      if (hasZeroCredits && isInOnboarding) {
-        console.log(`[Auth Init] Repairing user ${userId}: ${workspaceData.creditBalance} credits found in onboarding. Granting 500.`);
-        const updateObj: any = { 
-          creditBalance: STARTER_AMOUNT,
-          starterCreditsGranted: true,
-          updatedAt: new Date().toISOString()
-        };
-        
-        // Also ensure activeSource is correct
-        if (!workspaceData.activeSource) {
-          updateObj.activeSource = 'starter_credits';
+      const userRef = db.collection('users').doc(userId);
+      const workspaceRef = db.collection('workspaces').doc(workspaceId);
+      const credits = await db.runTransaction(async tx => {
+        const [snap, userSnap] = await Promise.all([tx.get(workspaceRef), tx.get(userRef)]);
+        if (snap.exists) {
+          if (snap.data()?.userApiKeyEncrypted) {
+            tx.set(db.collection('workspaceSecrets').doc(workspaceId), { userApiKeyEncrypted: snap.data()!.userApiKeyEncrypted });
+            tx.update(workspaceRef, { userApiKeyEncrypted: admin.firestore.FieldValue.delete() });
+          }
+          return snap.data()?.creditBalance || 0;
         }
-
-        await workspaceRef.update(updateObj);
-        await userRef.update({ 
-          credits: STARTER_AMOUNT,
-          updatedAt: new Date().toISOString()
+        const now = new Date().toISOString();
+        tx.set(workspaceRef, {
+          workspaceId, aiProvider: 'gemini', activeSource: 'starter_credits',
+          starterCreditsGranted: false, creditBalance: 0, trialStatus: 'awaiting_card',
+          hasUserApiKey: false, userApiKeyStatus: 'missing', updatedAt: now
         });
-        
-        const historyRef = workspaceRef.collection("transactions").doc();
-        await historyRef.set({
-          userId,
-          amount: STARTER_AMOUNT,
-          actionType: 'initial_grant',
-          source: 'starter',
-          description: 'Starter credits (Repair)',
-          createdAt: new Date().toISOString()
-        });
-        return res.json({ success: true, message: "Starter credits repaired", credits: STARTER_AMOUNT, workspaceId });
-      }
-
-      // Migration/Fix: If activeSource is user_api_key but key is missing/invalid, reset to starter_credits
-      const data = workspaceSnap.data() as AIAccessSettings;
-      if (data.activeSource === 'user_api_key' && (data.userApiKeyStatus !== 'valid' || !data.userApiKeyEncrypted)) {
-        console.log(`[Auth Init] Resetting activeSource to starter_credits for user ${userId} (invalid/missing user key)`);
-        await workspaceRef.update({ 
-          activeSource: 'starter_credits',
-          updatedAt: new Date().toISOString()
-        });
-      }
-
-      res.json({ success: true, message: "User already initialized", workspaceId });
+        tx.set(userRef, { ...(userSnap.exists ? {} : { onboardingStep: 1, createdAt: now }), uid: userId, email, workspaceId, credits: 0, updatedAt: now }, { merge: true });
+        return 0;
+      });
+      res.json({ success: true, workspaceId, credits });
     } catch (error: any) {
       console.error("Auth Init Error:", error);
+      if (error.message === 'STARTER_DAILY_LIMIT') return res.status(503).json({ error: 'Dzisiejsza pula kont pilotażowych została wykorzystana. Wróć jutro lub wypróbuj warsztat bez logowania.' });
       res.status(500).json({ error: "Failed to initialize user", details: error.message });
     }
   });
 
   // API Key Management Endpoints
-  app.post("/api/ai/settings/update", async (req, res) => {
+  apiRouter.post("/ai/settings/update", async (req, res) => {
     try {
       const { userId, workspaceId, geminiApiKey, activeSource } = req.body;
       if (!workspaceId) return res.status(400).json({ error: "Missing workspaceId" });
@@ -380,19 +334,29 @@ async function startServer() {
       }
 
       if (activeSource) {
+        if (!['starter_credits', 'purchased_credits', 'user_api_key'].includes(activeSource)) {
+          return res.status(400).json({ error: 'Invalid AI source' });
+        }
         updateData.activeSource = activeSource;
       }
 
+      if (geminiApiKey !== undefined) {
+        await db.collection('workspaceSecrets').doc(workspaceId).set({
+          userApiKeyEncrypted: geminiApiKey ? updateData.userApiKeyEncrypted : null
+        }, { merge: true });
+        updateData.userApiKeyEncrypted = admin.firestore.FieldValue.delete();
+      }
       await workspaceRef.update(updateData);
       const freshSnap = await workspaceRef.get();
-      res.json({ success: true, settings: freshSnap.data() });
+      const { userApiKeyEncrypted: _secret, ...publicSettings } = freshSnap.data() || {};
+      res.json({ success: true, settings: publicSettings });
     } catch (error: any) {
       console.error("Update AI Settings Error:", error);
       res.status(500).json({ error: "Failed to update AI settings", details: error.message });
     }
   });
 
-  app.post("/api/ai/settings/validate", async (req, res) => {
+  apiRouter.post("/ai/settings/validate", async (req, res) => {
     try {
       const { geminiApiKey } = req.body;
       if (!geminiApiKey) return res.status(400).json({ error: "Missing API key" });
@@ -408,7 +372,7 @@ async function startServer() {
   });
 
   // API Gatekeeper Endpoint
-  app.post("/api/ai/execute", async (req, res) => {
+  apiRouter.post("/ai/execute", createGenerationLimiter(), async (req, res) => {
     try {
       const { actionType, payload, userId, workspaceId } = req.body;
       const targetWorkspaceId = workspaceId || userId; // Fallback for legacy
@@ -419,7 +383,9 @@ async function startServer() {
         return res.status(401).json({ error: "Unauthorized: Missing User or Workspace ID" });
       }
 
-      const cost = AI_COSTS[actionType as CreditActionType] || 0;
+      let cost: number;
+      try { cost = validateAIRequest(actionType, payload); }
+      catch (error: any) { return res.status(400).json({ error: error.message }); }
       
       // Resolve AI Access
       const access = await resolveAiAccess(targetWorkspaceId);
@@ -432,126 +398,258 @@ async function startServer() {
 
       const apiKeyToUse = access.apiKey;
       const shouldUseCredits = access.source !== 'user_api_key';
+      const useAdc = access.useAdc || (!apiKeyToUse && shouldUseCredits);
+      // Models and prices are server-controlled, not selected by untrusted clients.
+      const modelName = actionType === 'generate_image'
+        ? (process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image')
+        : actionType === 'generate_video'
+          ? (process.env.GEMINI_VIDEO_MODEL || 'veo-3.1-fast-generate-preview')
+          : (process.env.GEMINI_TEXT_MODEL || 'gemini-3-flash-preview'); 
+      
+      console.log(`[Gatekeeper] useAdc=${useAdc}, apiKeyToUse=${apiKeyToUse ? 'PRESENT' : 'MISSING'}, shouldUseCredits=${shouldUseCredits}`);
+
+      const wallet = db.collection('workspaces').doc(targetWorkspaceId);
+      const ledger = wallet.collection('transactions').doc();
+      let reserved = false;
+      if (shouldUseCredits) {
+        try {
+          await db.runTransaction(async tx => {
+            const snap = await tx.get(wallet);
+            const balance = snap.data()?.creditBalance;
+            if (!Number.isFinite(balance) || balance < cost) throw new Error('Insufficient credits');
+            tx.update(wallet, { creditBalance: balance - cost });
+            tx.set(db.collection('users').doc(userId), { credits: balance - cost }, { merge: true });
+            tx.set(ledger, { userId, amount: -cost, actionType, source: 'usage',
+              status: 'reserved', createdAt: new Date().toISOString() });
+          });
+          reserved = true;
+        } catch { return res.status(402).json({ error: 'Insufficient credits. Use your own API key or top up.' }); }
+      }
 
       // Execute AI Action
-      const ai = new GoogleGenAI({ apiKey: apiKeyToUse });
-      const modelName = payload.model || "gemini-3-flash-preview"; 
-      
-      let aiResult;
+      let aiResult: string = "";
       try {
-        if (actionType === 'generate_video') {
-          // Video Generation (Veo)
-          let operation = await ai.models.generateVideos({
-            model: modelName,
-            prompt: payload.prompt,
-            image: payload.image ? {
-              imageBytes: payload.image.split(',')[1],
-              mimeType: 'image/png'
-            } : undefined,
-            config: payload.config
-          });
-
-          while (!operation.done) {
-            await new Promise(resolve => setTimeout(resolve, 5000));
-            operation = await ai.operations.getVideosOperation({ operation });
-          }
-
-          const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-          if (downloadLink) {
-            const response = await fetch(downloadLink, {
-              method: 'GET',
-              headers: { 'x-goog-api-key': apiKeyToUse },
+        if (useAdc) {
+          console.log(`[Gatekeeper] Using Vertex AI with ADC for ${actionType} (Model: ${modelName})`);
+          const vertexAi = new VertexAI({ project: projectId, location: 'us-central1' });
+          const model = vertexAi.getGenerativeModel({ model: modelName });
+          
+          if (actionType === 'generate_video') {
+            throw new Error("Video generation is not supported via Vertex AI SDK in this app yet. Please provide an API key.");
+          } else if (actionType === 'generate_image' || modelName.includes('image')) {
+             const response = await model.generateContent({
+              contents: [{ role: 'user', parts: [{ text: payload.prompt }] }],
+              generationConfig: payload.config
             });
-            const buffer = await response.arrayBuffer();
-            const base64 = Buffer.from(buffer).toString('base64');
-            aiResult = `data:video/mp4;base64,${base64}`;
+            const candidate = response.response.candidates?.[0];
+            const imagePart = candidate?.content?.parts?.find(p => p.inlineData);
+            if (imagePart?.inlineData) {
+              aiResult = `data:image/png;base64,${imagePart.inlineData.data}`;
+            } else {
+              // Vertex AI SDK response structure
+              aiResult = candidate?.content?.parts?.[0]?.text || "";
+            }
           } else {
-            throw new Error("Video generation failed: No download link returned");
-          }
-        } else if (actionType === 'generate_image' || modelName.includes('image')) {
-          // Image Generation or Multimodal
-          const parts: any[] = [{ text: payload.prompt }];
-          if (payload.image) {
-            parts.push({
-              inlineData: {
-                data: payload.image.split(',')[1],
-                mimeType: 'image/png'
-              }
+            const response = await model.generateContent({
+              contents: [{ role: 'user', parts: [{ text: payload.prompt }] }],
+              generationConfig: payload.config
             });
-          }
-
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: { parts },
-            config: payload.config
-          });
-
-          // Check for image output
-          const candidate = response.candidates?.[0];
-          const imagePart = candidate?.content?.parts?.find(p => p.inlineData);
-          if (imagePart?.inlineData) {
-            aiResult = `data:image/png;base64,${imagePart.inlineData.data}`;
-          } else {
-            aiResult = response.text || "";
+            // Vertex AI SDK response structure
+            aiResult = response.response.candidates?.[0]?.content?.parts?.[0]?.text || "";
           }
         } else {
-          // Standard Text Generation
-          console.log(`Executing standard text generation for ${actionType} with model ${modelName}`);
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: [{ parts: [{ text: payload.prompt }] }],
-            config: payload.config
-          });
-          aiResult = response.text || "";
-          console.log(`Generation successful, result length: ${aiResult.length}`);
-        }
-      } catch (aiError: any) {
-        console.error("Gemini API Error:", aiError);
-        return res.status(502).json({ error: "AI Generation failed", details: aiError.message });
-      }
-
-      // If success and credit mode -> Deduct credits in a transaction
-      if (shouldUseCredits && cost > 0) {
-        const workspaceRef = db.collection("workspaces").doc(targetWorkspaceId);
-        const userRef = db.collection("users").doc(userId);
-
-        await db.runTransaction(async (transaction: any) => {
-          const freshSnap = await transaction.get(workspaceRef);
-          const freshData = freshSnap.data() as AIAccessSettings;
+          console.log(`[Gatekeeper] Using Gemini API with ${access.source} for ${actionType}`);
+          const ai = new GoogleGenAI({ apiKey: apiKeyToUse });
           
-          const newBalance = (freshData?.creditBalance || 0) - cost;
+          if (actionType === 'generate_video') {
+            // Video Generation (Veo)
+            let operation = await ai.models.generateVideos({
+              model: modelName,
+              prompt: payload.prompt,
+              image: payload.image ? {
+                imageBytes: payload.image.split(',')[1],
+                mimeType: payload.image?.match(/^data:([^;]+);/)?.[1] || 'image/png'
+              } : undefined,
+              config: payload.config
+            });
 
-          transaction.update(workspaceRef, {
-            "creditBalance": newBalance,
-            "updatedAt": new Date().toISOString()
+            const deadline = Date.now() + 240_000;
+            while (!operation.done) {
+              if (Date.now() > deadline) throw new Error("Video generation timed out");
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              operation = await ai.operations.getVideosOperation({ operation });
+            }
+
+            const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+            if (downloadLink) {
+              const response = await fetch(downloadLink, {
+                method: 'GET',
+                headers: { 'x-goog-api-key': apiKeyToUse },
+              });
+              const buffer = await response.arrayBuffer();
+              const base64 = Buffer.from(buffer).toString('base64');
+              aiResult = `data:video/mp4;base64,${base64}`;
+            } else {
+              throw new Error("Video generation failed: No download link returned");
+            }
+          } else if (actionType === 'generate_image' || modelName.includes('image')) {
+            // Check if we should use generateImages for specialized Imagen models, or generateContent for modern multimodal image models
+            if (modelName.includes('imagen')) {
+              console.log(`[Gatekeeper] Using generateImages for Imagen model ${modelName}`);
+              const response = await ai.models.generateImages({
+                model: modelName,
+                prompt: payload.prompt || "",
+                config: {
+                  numberOfImages: 1,
+                  aspectRatio: payload.config?.imageConfig?.aspectRatio || '1:1',
+                  outputMimeType: 'image/png',
+                }
+              });
+              const imgObj = response.generatedImages?.[0];
+              const imageBytes = imgObj?.image?.imageBytes || (imgObj as any)?.imageBytes || (imgObj as any)?.image?.data;
+              if (imageBytes) {
+                aiResult = `data:image/png;base64,${imageBytes}`;
+              } else {
+                throw new Error("No image was returned by the generation model.");
+              }
+            } else if (modelName === 'gemini-2.5-flash-image' || modelName === 'gemini-3.1-flash-image' || modelName === 'gemini-3-pro-image') {
+              console.log(`[Gatekeeper] Using generateContent for nano banana model ${modelName}`);
+              const parts: any[] = [{ text: payload.prompt }];
+              if (payload.image) {
+                parts.push({
+                  inlineData: {
+                    data: payload.image.split(',')[1],
+                    mimeType: payload.image?.match(/^data:([^;]+);/)?.[1] || 'image/png'
+                  }
+                });
+              }
+
+              const response = await ai.models.generateContent({
+                model: modelName,
+                contents: { parts },
+                config: {
+                  responseModalities: [Modality.TEXT, Modality.IMAGE],
+                  imageConfig: {
+                    aspectRatio: payload.config?.imageConfig?.aspectRatio || "1:1",
+                    ...(modelName === "gemini-2.5-flash-image" ? {} : { imageSize: "1K" })
+                  }
+                }
+              });
+
+              // Iterate parts to find the generated image
+              const candidate = response.candidates?.[0];
+              const partsList = candidate?.content?.parts || [];
+              let foundImage = false;
+              for (const part of partsList) {
+                if (part.inlineData) {
+                  aiResult = `data:image/png;base64,${part.inlineData.data}`;
+                  foundImage = true;
+                  break;
+                }
+              }
+
+              if (!foundImage) {
+                aiResult = response.text || "";
+              }
+            } else {
+              // Image Generation or Multimodal fallback
+              const parts: any[] = [{ text: payload.prompt }];
+              if (payload.image) {
+                parts.push({
+                  inlineData: {
+                    data: payload.image.split(',')[1],
+                    mimeType: payload.image?.match(/^data:([^;]+);/)?.[1] || 'image/png'
+                  }
+                });
+              }
+
+              const response = await ai.models.generateContent({
+                model: modelName,
+                contents: { parts },
+                config: payload.config
+              });
+
+              // Check for image output
+              const candidate = response.candidates?.[0];
+              const imagePart = candidate?.content?.parts?.find(p => p.inlineData);
+              if (imagePart?.inlineData) {
+                aiResult = `data:image/png;base64,${imagePart.inlineData.data}`;
+              } else {
+                aiResult = response.text || "";
+              }
+            }
+          } else {
+            // Standard Text Generation
+            const response = await ai.models.generateContent({
+              model: modelName,
+              contents: [{ parts: [{ text: payload.prompt }] }],
+              config: payload.config
+            });
+            aiResult = response.text || "";
+          }
+        }
+
+        console.log(`Generation successful, result length: ${aiResult?.length || 0}`);
+
+        assertAIResult(actionType, aiResult);
+        if (actionType === 'generate_image' || actionType === 'generate_video') {
+          const match = aiResult.match(/^data:([^;]+);base64,(.+)$/s);
+          if (!match) throw new Error('Invalid generated media');
+          const ext = actionType === 'generate_video' ? 'mp4' : 'png';
+          const bucket = getStorage(firebaseApp).bucket(process.env.FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket);
+          const file = bucket.file(`users/${userId}/generated/${crypto.randomUUID()}.${ext}`);
+          await file.save(Buffer.from(match[2], 'base64'), {
+            resumable: false, contentType: match[1],
+            metadata: { metadata: { firebaseStorageDownloadTokens: crypto.randomUUID() } }
           });
+          aiResult = await getDownloadURL(file);
+        }
+        if (reserved) await ledger.update({ status: 'completed' });
 
-          // Sync with users collection for frontend consistency
-          transaction.update(userRef, {
-            "credits": newBalance,
-            "updatedAt": new Date().toISOString()
+        return res.json({ 
+          success: true, 
+          result: aiResult, 
+          creditsUsed: shouldUseCredits ? cost : 0
+        });
+
+      } catch (aiError: any) {
+        if (reserved) {
+          await db.runTransaction(async tx => {
+            const [walletSnap, ledgerSnap] = await Promise.all([tx.get(wallet), tx.get(ledger)]);
+            if (ledgerSnap.data()?.status !== 'reserved') return;
+            const balance = (walletSnap.data()?.creditBalance || 0) + cost;
+            tx.update(wallet, { creditBalance: balance });
+            tx.set(db.collection('users').doc(userId), { credits: balance }, { merge: true });
+            tx.update(ledger, { status: 'refunded', refundedAt: new Date().toISOString() });
           });
+        }
+        console.error("AI API Error:", aiError);
+        const isForbidden = aiError.message?.includes("403") || aiError.message?.includes("Forbidden") || aiError.message?.includes("Permission denied") || aiError.status === 403;
+        
+        if (isForbidden) {
+          return res.status(403).json({
+            error: "PERMISSION_DENIED",
+            message: "AI service returned 403 Forbidden. This usually means the Service Account lacks IAM roles (Vertex AI User) or the API Key is restricted.",
+            details: aiError.message || aiError.toString()
+          });
+        }
 
-          // Record transaction history
-          const historyRef = workspaceRef.collection("transactions").doc();
-          const transactionRecord: CreditTransaction = {
-            userId,
-            amount: -cost,
-            actionType: actionType as CreditActionType,
-            source: 'usage',
-            description: `AI Action: ${actionType}`,
-            createdAt: new Date().toISOString()
-          };
-          transaction.set(historyRef, transactionRecord);
+        const isQuotaExceeded = aiError.message?.includes("resource-exhausted") || aiError.message?.includes("Quota exceeded") || aiError.code === 8 || aiError.code === 'resource-exhausted';
+        if (isQuotaExceeded) {
+          return res.status(429).json({
+            error: "RESOURCE_EXHAUSTED",
+            message: "Firestore or AI quota limit exceeded. Please wait for the daily reset or check your project limits.",
+            details: aiError.message || aiError.toString()
+          });
+        }
+
+        return res.status(502).json({ 
+          error: "AI Generation failed", 
+          details: aiError.message,
+          code: aiError.code,
+          status: aiError.status
         });
       }
-
-      res.json({ 
-        success: true, 
-        result: aiResult, 
-        creditsUsed: shouldUseCredits ? cost : 0
-      });
-
     } catch (error: any) {
       console.error("Gatekeeper Error:", error);
       res.status(500).json({ 
@@ -563,37 +661,25 @@ async function startServer() {
     }
   });
 
-  // Diagnostic Endpoint
-  app.get("/api/admin/diagnose-user/:userId", async (req, res) => {
-    try {
-      const { userId } = req.params;
-      const userRef = db.collection("users").doc(userId);
-      const workspaceRef = db.collection("workspaces").doc(userId);
-      
-      const [userSnap, workspaceSnap] = await Promise.all([userRef.get(), workspaceRef.get()]);
-      
-      res.json({
-        userId,
-        userExists: userSnap.exists,
-        userData: userSnap.exists ? userSnap.data() : null,
-        workspaceExists: workspaceSnap.exists,
-        workspaceData: workspaceSnap.exists ? workspaceSnap.data() : null,
-        masterKeyConfigured: !!(process.env.GEMINI_MASTER_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY)
-      });
-    } catch (error: any) {
-      res.status(500).json({ error: error.message });
-    }
-  });
-
   // Health check
-  app.get("/api/health", (req, res) => {
+  apiRouter.get("/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
   // Catch-all for unmatched API routes
-  app.all("/api/*all", (req, res) => {
+  apiRouter.all("*all", (req, res) => {
     console.warn(`[API 404] Unmatched API route: ${req.method} ${req.url}`);
     res.status(404).json({ error: "API route not found", method: req.method, url: req.url });
+  });
+
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("[Global Error Handler]", err);
+    res.status(err.status || 500).json({
+      error: "Internal Server Error",
+      message: err.message || "An unexpected error occurred",
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   });
 
   // Vite middleware for development

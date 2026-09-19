@@ -1,3 +1,4 @@
+import { STARTER_CREDITS, WEEK_PLAN_COST, IMAGE_WITH_BRIEF_COST } from '../launchOffer';
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
@@ -8,6 +9,36 @@ import NeonButton from './NeonButton';
 import { auth, googleProvider, db, handleFirestoreError, OperationType } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+const Starfield: React.FC = () => {
+  const stars = Array.from({ length: 150 }).map((_, i) => ({
+    id: i,
+    top: `${Math.random() * 100}%`,
+    left: `${Math.random() * 100}%`,
+    size: Math.random() * 2 + 1,
+    duration: Math.random() * 3 + 2,
+    delay: Math.random() * 5
+  }));
+
+  return (
+    <div className="starfield">
+      {stars.map(star => (
+        <div 
+          key={star.id} 
+          className="star" 
+          style={{ 
+            top: star.top, 
+            left: star.left, 
+            width: `${star.size}px`, 
+            height: `${star.size}px`,
+            '--duration': `${star.duration}s`,
+            animationDelay: `${star.delay}s`
+          } as any} 
+        />
+      ))}
+    </div>
+  );
+};
 
 const LandingPage: React.FC = () => {
   const { language, setLanguage, setAuthenticated, setOnboardingStep, credits, brand, resetMission, setFirebaseUser, updateBrand, setIsStarted } = useStore();
@@ -32,12 +63,11 @@ const LandingPage: React.FC = () => {
         await setDoc(userDocRef, {
           uid: user.uid,
           email: user.email,
-          credits: 500,
           language: language,
           onboardingStep: 1,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }).catch((e: any) => {
+        }, { merge: true }).catch((e: any) => {
           handleFirestoreError(e, OperationType.CREATE, `users/${user.uid}`);
           throw e;
         });
@@ -71,7 +101,7 @@ const LandingPage: React.FC = () => {
   };
 
   const handleStartMission = () => {
-    if (brand.name) {
+    if (auth.currentUser && brand.name) {
       setShowContinueDialog(true);
     } else {
       handleLogin();
@@ -99,11 +129,13 @@ const LandingPage: React.FC = () => {
   };
 
   const handleContinue = () => {
+    if (!auth.currentUser) { void handleLogin(); return; }
     setIsStarted(true);
     setAuthenticated(true);
   };
 
   const handleNewMission = () => {
+    if (!auth.currentUser) { void handleLogin(); return; }
     setIsStarted(true);
     resetMission();
     setAuthenticated(true);
@@ -111,83 +143,96 @@ const LandingPage: React.FC = () => {
   };
 
   return (
-    <motion.div 
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="relative min-h-screen flex flex-col items-center justify-center p-4 md:p-6 overflow-y-auto bg-transparent pb-32"
-    >
-      {/* MONOCHROMATIC CORNER HUD - Hidden on small mobile */}
-      <div className="hidden sm:block absolute top-10 left-10 text-[9px] font-mono text-cyan-500/40 tracking-[0.4em] uppercase border-l border-cyan-500/20 pl-4 py-1">
-        SYSTEM_BOOT: <span className="text-cyan-500/80">OPERATIONAL</span>
-      </div>
-      <div className="hidden sm:block absolute top-10 right-10 text-[9px] font-mono text-cyan-500/40 tracking-[0.4em] uppercase border-r border-cyan-500/20 pr-4 py-1 text-right">
-        LINK_SAT: <span className="text-cyan-500/80">CONNECTED</span>
-      </div>
-      <div className="hidden sm:block absolute bottom-10 left-10 text-[9px] font-mono text-cyan-500/40 tracking-[0.4em] uppercase border-l border-cyan-500/20 pl-4 py-1">
-        FUEL_CELL: <span className="text-cyan-500/80">{credits}_FC</span>
+    <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-[#050508] overflow-x-hidden crt-flicker">
+      {/* Background Atmosphere */}
+      <Starfield />
+      <div className="scanline" />
+      <div className="vignette" />
+      
+      <div className="fixed inset-0 z-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-cyan-500/5 blur-[120px] rounded-full animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/5 blur-[120px] rounded-full animate-pulse" style={{ animationDelay: '2s' }} />
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-[0.02] mix-blend-overlay" />
       </div>
 
-      <div className="z-10 text-center max-w-5xl relative flex flex-col items-center w-full">
-        {/* TOP BADGE - FIXED POSITIONING */}
-        <motion.div variants={itemVariants} className="mb-6 md:mb-12">
-          <motion.div 
-            animate={{ scale: [1, 1.05, 1], opacity: [0.6, 1, 0.6] }}
-            transition={{ duration: 4, repeat: Infinity }}
-            className="px-4 py-1.5 rounded-full bg-[#C74CFF]/5 border border-[#C74CFF]/30 text-[#C74CFF] font-orbitron text-[8px] md:text-[9px] tracking-[0.2em] flex items-center gap-2 shadow-[0_0_15px_rgba(199,76,255,0.2)]"
-          >
-            <Zap size={10} fill="currentColor" />
-            <span>{t.startBadge}</span>
+      <motion.div 
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="relative z-10 w-full flex flex-col items-center justify-center p-4 md:p-6 overflow-y-auto pb-32"
+      >
+        {/* MONOCHROMATIC CORNER HUD - Hidden on small mobile */}
+        <div className="hidden sm:block absolute top-8 left-8 text-[8px] font-mono text-cyan-400/30 tracking-[0.4em] uppercase border-l border-cyan-400/10 pl-3 py-1">
+          SYSTEM_BOOT: <span className="text-cyan-400/60">OPERATIONAL</span>
+          <div className="mt-1 text-[7px] opacity-40">COORDS: 42.000 / 13.337</div>
+        </div>
+        <div className="hidden sm:block absolute top-8 right-8 text-[8px] font-mono text-cyan-400/30 tracking-[0.4em] uppercase border-r border-cyan-400/10 pr-3 py-1 text-right">
+          LINK_SAT: <span className="text-cyan-400/60">CONNECTED</span>
+          <div className="mt-1 text-[7px] opacity-40">SIGNAL: 98.4% STABLE</div>
+        </div>
+        <div className="hidden sm:block absolute bottom-8 left-8 text-[8px] font-mono text-cyan-400/30 tracking-[0.4em] uppercase border-l border-cyan-400/10 pl-3 py-1">
+          FUEL_CELL: <span className="text-cyan-400/60">{credits}_FC</span>
+          <div className="mt-1 text-[7px] opacity-40">CONSUMPTION: 0.04/SEC</div>
+        </div>
+
+        <div className="z-10 text-center max-w-5xl relative flex flex-col items-center w-full">
+          {/* TOP BADGE - FIXED POSITIONING */}
+          <motion.div variants={itemVariants} className="mb-4 md:mb-8">
+            <motion.div 
+              animate={{ scale: [1, 1.05, 1], opacity: [0.4, 0.8, 0.4] }}
+              transition={{ duration: 4, repeat: Infinity }}
+              className="px-3 py-1 rounded-full bg-cyan-500/5 border border-cyan-500/20 text-cyan-400 font-orbitron text-[7px] md:text-[8px] tracking-[0.2em] flex items-center gap-2 shadow-[0_0_10px_rgba(34,211,238,0.1)] backdrop-blur-md"
+            >
+              <Zap size={8} className="text-cyan-400" />
+              <span>{t.startBadge}</span>
+            </motion.div>
           </motion.div>
-        </motion.div>
 
-        {/* LOGO AREA - RESPONSIVE SCALING */}
-        <motion.div 
-          variants={itemVariants} 
-          className="relative mb-6 md:mb-8 w-full"
-          animate={{ 
-            filter: ["drop-shadow(0 0 10px rgba(52, 224, 247, 0.3))", "drop-shadow(0 0 20px rgba(52, 224, 247, 0.6))", "drop-shadow(0 0 10px rgba(52, 224, 247, 0.3))"]
-          }}
-          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-        >
-          <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-orbitron tracking-tighter select-none py-4 md:py-6 hologram-logo flex flex-col sm:flex-row items-center justify-center sm:gap-4 leading-none">
-            <span className="bg-gradient-to-r from-[#8C4DFF] via-[#34E0F7] to-[#8C4DFF] bg-clip-text text-transparent animate-gradient-x text-center drop-shadow-[0_0_15px_rgba(52,224,247,0.3)]">
-              SociAI MediA Studio
-            </span>
-          </h1>
-          <div className="w-32 md:w-64 h-[2px] bg-gradient-to-r from-transparent via-cyan-500/40 to-transparent mx-auto mt-2" />
-        </motion.div>
+          {/* LOGO AREA - RESPONSIVE SCALING */}
+          <motion.div 
+            variants={itemVariants} 
+            className="relative mb-4 md:mb-6 w-full"
+          >
+            <div className="absolute -inset-10 bg-cyan-500/5 blur-[80px] rounded-full opacity-20" />
+            <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black font-orbitron tracking-tighter select-none py-2 md:py-4 hologram-logo flex flex-col items-center justify-center leading-none relative z-10">
+              <span className="text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.15)]">SociAI</span>
+              <span className="text-cyan-400 drop-shadow-[0_0_15px_rgba(34,211,238,0.3)]">MediA Studio</span>
+            </h1>
+            <div className="w-24 md:w-48 h-[1px] bg-gradient-to-r from-transparent via-cyan-500/20 to-transparent mx-auto mt-1" />
+          </motion.div>
 
-        <motion.p 
-          variants={itemVariants}
-          className="text-sm md:text-xl text-white/40 font-light mb-10 md:mb-16 max-w-2xl mx-auto font-orbitron tracking-widest uppercase leading-relaxed px-4"
-        >
-          {t.heroSubtitle}
-        </motion.p>
+          <motion.p 
+            variants={itemVariants}
+            className="text-xs md:text-base text-white/40 font-light mb-8 md:mb-12 max-w-xl mx-auto font-orbitron tracking-[0.2em] uppercase leading-relaxed px-4"
+          >
+            {language === 'PL' ? 'Twoja marka. Tydzień postów. Grafiki gotowe do publikacji.' : t.heroSubtitle}
+          </motion.p>
+
 
         {/* BUTTONS - MOBILE STACKING */}
         {loginError && (
           <motion.div 
             initial={{ opacity: 0, y: -10 }} 
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-xs font-orbitron uppercase tracking-widest max-w-md text-center"
+            className="mb-4 p-3 rounded-xl bg-red-500/5 border border-red-500/20 text-red-500 text-[10px] font-orbitron uppercase tracking-widest max-w-md text-center"
           >
             {loginError}
           </motion.div>
         )}
 
         {!showContinueDialog ? (
-          <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-6 md:gap-10 justify-center items-center w-full max-w-md sm:max-w-none">
+          <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 md:gap-8 justify-center items-center w-full max-w-md sm:max-w-none">
             <div className="relative group w-full sm:w-auto">
               {/* NAVIGATION BEACON */}
-              <div className="hidden md:block absolute -left-12 top-1/2 -translate-y-1/2 w-4 h-4 bg-[#34E0F7] rounded-full nav-beacon" />
+              <div className="hidden md:block absolute -left-10 top-1/2 -translate-y-1/2 w-3 h-3 bg-[#34E0F7] rounded-full nav-beacon opacity-40" />
               
               <NeonButton 
                 variant="purple" 
-                className="w-full sm:w-auto flex items-center justify-center gap-4 md:text-xl px-10 md:px-14 py-4 md:py-6 shadow-[0_0_40px_rgba(140,77,255,0.3)] border-2"
+                className="w-full sm:w-auto flex items-center justify-center gap-3 md:text-lg px-8 md:px-12 py-3 md:py-5 shadow-[0_0_30px_rgba(140,77,255,0.2)] border"
+                disabled={isLoggingIn}
                 onClick={handleStartMission}
               >
-                <Rocket size={20} className="md:size-24 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                <Rocket size={18} className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
                 {t.startBtn}
               </NeonButton>
             </div>
@@ -195,11 +240,11 @@ const LandingPage: React.FC = () => {
             <NeonButton 
               variant="cyan" 
               glow={false}
-              className="w-full sm:w-auto flex items-center justify-center gap-4 md:text-xl px-10 md:px-14 py-4 md:py-6 border-2 border-opacity-30 hover:border-opacity-100 bg-white/5 backdrop-blur-md"
+              className="w-full sm:w-auto flex items-center justify-center gap-3 md:text-lg px-8 md:px-12 py-3 md:py-5 border border-opacity-20 hover:border-opacity-100 bg-white/5 backdrop-blur-md"
               onClick={handleLogin}
               disabled={isLoggingIn}
             >
-              <LogIn size={20} className={`md:size-24 ${isLoggingIn ? 'animate-spin' : ''}`} />
+              <LogIn size={18} className={`${isLoggingIn ? 'animate-spin' : ''}`} />
               {isLoggingIn ? 'Connecting...' : t.loginBtn}
             </NeonButton>
           </motion.div>
@@ -236,16 +281,25 @@ const LandingPage: React.FC = () => {
           </motion.div>
         )}
 
+        <div className="mt-8 w-full max-w-3xl space-y-6">
+          <p className="text-sm text-slate-300">{STARTER_CREDITS} FC / 7 dni gratis po rejestracji karty · Potem 49 zł/mies.</p>
+          <a href="/?workshop=1" className="inline-flex rounded-xl border border-cyan-300/40 px-6 py-3 text-cyan-200 hover:bg-cyan-300/10">Wypróbuj warsztat bez logowania →</a>
+          <div className="grid md:grid-cols-3 gap-3 text-left">
+            {[['01 / DNA MARKI', 'Opisz ofertę i odbiorców. Zacznij bez skanowania strony.'], ['02 / PIERWSZA MISJA', `Plan siedmiu postów za ${WEEK_PLAN_COST} FC. Edytuj hooki, treść i CTA.`], ['03 / TWOJA GRAFIKA', `Obraz z promptem zwykle ${IMAGE_WITH_BRIEF_COST} FC. Dopasuj, pobierz i opublikuj.`]].map(([title, body]) => <div key={title} className="p-5 rounded-2xl border border-white/10 bg-white/[.03]"><h2 className="text-xs tracking-widest text-cyan-300 mb-3">{title}</h2><p className="text-sm text-slate-400 leading-relaxed">{body}</p></div>)}
+          </div>
+          <details className="text-left border border-white/10 rounded-xl p-4 text-sm text-slate-400"><summary className="cursor-pointer text-white">Co się dzieje po wykorzystaniu kredytów?</summary><p className="mt-3">Twoje zapisane materiały pozostają dostępne do edycji i pobrania. Po 7 dniach próby abonament odnawia się automatycznie: 49 zł/mies. za 500 FC, chyba że wcześniej anulujesz. Wyczerpanie FC nie przyspiesza obciążenia karty. Niewykorzystane FC nie przechodzą na kolejny okres. Pakiet startowy otrzymujesz raz na konto i kartę, na 7 dni. W pilotażu liczba nowych pakietów dziennie jest ograniczona.</p></details>
+          <a href="https://socialmediastudio.pl/" target="_blank" rel="noopener noreferrer" className="inline-block text-sm text-slate-400 underline">Potrzebujesz pomocy z prowadzeniem marki? Social Media Studio</a>
+        </div>
         {/* LANGUAGE SELECTOR */}
-        <motion.div variants={itemVariants} className="mt-12 md:mt-20 flex gap-2 md:gap-4 justify-center flex-wrap">
+        <motion.div variants={itemVariants} className="mt-8 md:mt-12 flex gap-2 md:gap-3 justify-center flex-wrap">
           {(['PL', 'EN', 'NO', 'RU'] as const).map((lang) => (
             <button
               key={lang}
               onClick={() => setLanguage(lang)}
-              className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center text-[10px] md:text-[11px] font-orbitron transition-all border-2 ${
+              className={`w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center text-[8px] md:text-[9px] font-orbitron transition-all border ${
                 language === lang 
-                  ? 'border-cyan-500 text-cyan-500 bg-cyan-500/15 shadow-[0_0_20px_rgba(52,224,247,0.3)]' 
-                  : 'border-white/5 text-white/20 hover:text-white hover:border-white/20'
+                  ? 'border-cyan-500 text-cyan-500 bg-cyan-500/10 shadow-[0_0_15px_rgba(52,224,247,0.2)]' 
+                  : 'border-white/5 text-white/10 hover:text-white hover:border-white/10'
               }`}
             >
               {lang}
@@ -253,8 +307,9 @@ const LandingPage: React.FC = () => {
           ))}
         </motion.div>
       </div>
+    </motion.div>
 
-      <motion.footer 
+    <motion.footer 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.5 }}
@@ -276,7 +331,7 @@ const LandingPage: React.FC = () => {
           animation: gradient-x 8s ease infinite;
         }
       `}</style>
-    </motion.div>
+    </div>
   );
 };
 

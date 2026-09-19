@@ -1,3 +1,4 @@
+import { missionDate } from './missionDates';
 import { BrandData, SocialPost, Language, PlatformDNA, Platform, CreditActionType } from "./types";
 import { useStore } from "./store";
 import { callAI } from "./aiGatekeeper";
@@ -108,6 +109,8 @@ export class GeminiService {
     COLORS: ${colorString}
     EMOJI STYLE: ${emojiInstructions}
     CTA STYLE: ${ctaInstructions}
+    PREFERRED WORDS: ${brand.dictionary?.keywords?.join(', ') || 'Not specified'}
+    FORBIDDEN WORDS: ${brand.dictionary?.forbidden?.join(', ') || 'Not specified'}
     YODA MODE: ${brand.isYodaMode && targetLanguage === 'PL' ? 'ACTIVE (Use inverted Polish grammar)' : 'INACTIVE'}
     ${referenceContext}
     ----------------------
@@ -200,31 +203,40 @@ export class GeminiService {
   async generateImage(prompt: string, brand: BrandData, context?: CampaignContext): Promise<string> {
     try {
       if (!brand && !context?.brand) {
-        return `https://loremflickr.com/800/800/business?random=${Math.random()}`;
+        throw new Error("Najpierw uzupełnij DNA marki.");
       }
       
-      let finalPrompt = prompt;
+      let finalPrompt = prompt || '';
       if (context) {
-        if (prompt.length < 50) {
+        if (!finalPrompt || finalPrompt.length < 50) {
           finalPrompt = await this.generateImagePromptFromPost(context);
         }
       } else {
-        finalPrompt = `Professional cinematic photo for ${brand.name}. Topic: ${prompt}. Style: ${brand.voiceProfile}. High resolution, no text.`;
+        finalPrompt = `Professional cinematic photo for ${brand.name}. Topic: ${finalPrompt || 'business'}. Style: ${brand.voiceProfile}. High resolution, no text.`;
       }
+      finalPrompt = `${this.getBrandContextPrompt(brand, context?.language || brand.contentLanguage)}
+        ${this.getPlatformContextPrompt(context?.platform || 'instagram', brand)}
+        VISUAL BRIEF: ${finalPrompt}
+        Keep referenced products faithful to the original. Do not add logos or text; overlays are added separately.`;
 
       const state = useStore.getState();
       const userId = state.userId;
       const workspaceId = state.workspaceId;
       const result = await callAI('generate_image', { 
         prompt: finalPrompt, 
-        model: 'gemini-2.5-flash-image' 
+        model: 'gemini-2.5-flash-image',
+        image: brand.referenceSettings?.useInGeneration
+          ? (brand.referenceImages?.find(ref => ref.priority === 'primary' && (!ref.platforms?.length || ref.platforms.includes(context?.platform || 'instagram')))?.imageUrl
+            || brand.referenceImages?.find(ref => !ref.platforms?.length || ref.platforms.includes(context?.platform || 'instagram'))?.imageUrl)
+          : undefined,
+        config: { imageConfig: { aspectRatio: context?.platform === 'tiktok' ? '9:16' : context?.platform === 'youtube' ? '16:9' : '1:1' } }
       }, userId, workspaceId);
 
       return result;
     } catch (e: any) {
       console.error("Image generation failed", e);
+      throw e;
     }
-    return `https://loremflickr.com/800/800/${(brand.industry || '').split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
 
   async scanWebsite(url: string, targetLanguage: Language) {
@@ -241,18 +253,16 @@ export class GeminiService {
         maxOutputTokens: 4096
       });
     } catch (searchError: any) {
-      console.warn("Search grounding failed, falling back to direct analysis", searchError);
-      const fallbackPrompt = `Analyze this business URL: ${url.trim()}. 
-        Based on the URL name and common knowledge, describe the business, industry, and mission.
-        Report must be in ${langName}.`;
-      intelligence = await this.callGatekeeper('scan_brand', fallbackPrompt);
+      throw new Error('Nie udało się odczytać informacji o stronie. Uzupełnij DNA marki ręcznie lub spróbuj ponownie.');
     }
 
     try {
       const dnaPrompt = `Based on this intelligence: "${intelligence.slice(0, 10000)}", create a structured Brand DNA JSON.
         URL: ${url}.
         Language: ${langName}.
-        Ensure the JSON is valid and concise.`;
+        Return fields: name, description, industry, toneOfVoice, coreMission, whatWeDo, howWeDoIt,
+        pillars (string array), colors (array of {name, hex}), toneConfidence (number 0-1).
+        Use only verified information from the intelligence; leave unknown fields empty.`;
 
       const responseText = await this.callGatekeeper('ai_enhance', dnaPrompt, 'gemini-3-flash-preview', {
         responseMimeType: "application/json",
@@ -311,7 +321,9 @@ export class GeminiService {
       const prompt = `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post about: ${topic}. 
         Language: ${langName}. 
         Ensure the content matches the platform's focus and goal.
-        Return JSON format.`;
+        Return ONLY JSON with these required fields: topic (string), hook (short string),
+        content (complete caption with one CTA), hashtags (array of strings), imageBrief (detailed English visual prompt).
+        Never invent prices, results, testimonials or facts absent from the brand information.`;
 
       const responseText = await this.callGatekeeper('generate_post', prompt, 'gemini-3-flash-preview', {
         responseMimeType: "application/json",
@@ -320,6 +332,7 @@ export class GeminiService {
 
       const data = JSON.parse(this.cleanJsonResponse(responseText || '{}'));
       const campaignContext = this.buildCampaignContext({ ...data, platform }, brand);
+      if (typeof data.content !== 'string' || !data.content.trim()) throw new Error('AI returned an empty caption.');
       const imageUrl = await this.generateImage(data.imageBrief, brand, campaignContext);
       return {
         ...data,
@@ -348,8 +361,8 @@ export class GeminiService {
       return result;
     } catch (e: any) {
       console.error("Image enhancement failed", e);
+      throw e;
     }
-    return base64Image;
   }
 
   async generateThumbnail(videoDescription: string, brand: BrandData, targetLanguage: Language): Promise<{ url: string; hook: string }> {
@@ -381,7 +394,7 @@ export class GeminiService {
     const langName = this.getLanguageName(targetLanguage);
 
     try {
-      const prompt = `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post for this ${mediaType}: "${mediaDescription}". Language: ${langName}. JSON format.`;
+      const prompt = `${contextPrompt} ${platformContext} Write a high-engagement ${platform} post for this ${mediaType}: "${mediaDescription}". Language: ${langName}. Return JSON with topic, hook, content, hashtags (array of strings), imageBrief.`;
       
       const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
         responseMimeType: "application/json",
@@ -416,16 +429,25 @@ export class GeminiService {
         --- PLATFORM STRATEGIES ---
         ${allPlatformsContext}
         ---------------------------
-        Create a 7-day social media plan with a mix of platforms (facebook, instagram, linkedin, tiktok). 
+        Create a 7-day social media plan. Use the configured platforms: ${Object.keys(brand.platformDNA || {}).filter(key => brand.platformDNA?.[key as Platform]?.positioning).join(', ') || 'instagram'}. Prefer the platform whose positioning is most specific to this brand. 
         Language: ${langName}. 
         Ensure each post follows the specific platform strategy.
-        Return as a JSON array.`;
+        Return ONLY a JSON array of exactly 7 objects, one for each dayIndex 0 through 6.
+        Each object must contain dayIndex (integer), platform (facebook/instagram/linkedin/tiktok/youtube/twitter),
+        topic (string), hook (short string), content (complete caption with one CTA),
+        hashtags (array of strings), imageBrief (detailed English visual prompt).
+        Never invent prices, results, testimonials or facts absent from the brand information.`;
 
       const responseText = await this.callGatekeeper('generate_post', prompt, 'gemini-3-flash-preview', {
         responseMimeType: "application/json"
       });
 
       const data = JSON.parse(this.cleanJsonResponse(responseText || '[]'));
+      if (!Array.isArray(data) || data.length !== 7 || new Set(data.map(p => p.dayIndex)).size !== 7 ||
+          data.some(p => !Number.isInteger(p.dayIndex) || p.dayIndex < 0 || p.dayIndex > 6 ||
+            !['facebook','instagram','linkedin','tiktok'].includes(p.platform) || !p.content || !p.topic)) {
+        throw new Error('AI zwróciło niepełny plan. Spróbuj ponownie.');
+      }
       return await Promise.all(data.map(async (item: any) => {
         const campaignContext = this.buildCampaignContext(item, brand);
         return {
@@ -437,7 +459,9 @@ export class GeminiService {
           showHook: true,
           signatureEnabled: true,
           content: this.buildFinalContent(item.content, brand),
-          imagePreviewUrl: await this.generateImage(item.imageBrief, brand, campaignContext)
+          language: targetLanguage,
+          hashtags: Array.isArray(item.hashtags) ? item.hashtags : [],
+          plannedDate: missionDate(item.dayIndex, weekIndex)
         };
       }));
     } catch (e: any) {
@@ -454,7 +478,7 @@ export class GeminiService {
     try {
       const prompt = `${contextPrompt} ${platformContext} Refine post CAPTION/CONTENT ONLY. DO NOT change the image hook or the image itself. 
         Command: "${refinePrompt}". 
-        Original Topic: ${post.topic}. 
+        Original Topic: ${post.topic}. Current caption: ${post.content}. 
         Language: ${langName}. 
         Return JSON with 'content' field only.`;
 
@@ -477,7 +501,7 @@ export class GeminiService {
     const platformContext = this.getPlatformContextPrompt(post.platform, brand);
 
     try {
-      const prompt = `${contextPrompt} ${platformContext} Refine post IMAGE BRIEF ONLY: "${refinePrompt}". Original: ${post.topic}. JSON.`;
+      const prompt = `${contextPrompt} ${platformContext} Refine post IMAGE BRIEF ONLY: "${refinePrompt}". Original: ${post.topic}. Current brief: ${post.imageBrief}. Return JSON with imageBrief (string).`;
       
       const responseText = await this.callGatekeeper('ai_enhance', prompt, 'gemini-3-flash-preview', {
         responseMimeType: "application/json"
@@ -532,6 +556,7 @@ export class GeminiService {
         finalPrompt = await this.generateImagePromptFromPost(context);
       }
 
+      if (brand.colors?.length) finalPrompt += `\nUse this brand palette: ${brand.colors.map(color => color.hex).join(', ')}.`;
       const state = useStore.getState();
       const userId = state.userId;
       const workspaceId = state.workspaceId;
@@ -549,8 +574,8 @@ export class GeminiService {
       return result;
     } catch (e: any) {
       console.error("Studio image generation failed", e);
+      throw e;
     }
-    return `https://loremflickr.com/1080/1080/${(brand.industry || '').split(' ')[0] || 'business'}?random=${Math.random()}`;
   }
 
   async generateStudioVideo(
@@ -569,6 +594,7 @@ export class GeminiService {
         finalPrompt = await this.generateImagePromptFromPost(context);
       }
 
+      if (brand.colors?.length) finalPrompt += `\nUse this brand palette: ${brand.colors.map(color => color.hex).join(', ')}.`;
       const state = useStore.getState();
       const userId = state.userId;
       const workspaceId = state.workspaceId;
@@ -586,8 +612,8 @@ export class GeminiService {
       return result;
     } catch (e: any) {
       console.error("Studio video generation failed", e);
+      throw e;
     }
-    return "https://assets.mixkit.co/videos/preview/mixkit-abstract-technology-background-with-blue-lines-41344-large.mp4";
   }
 }
 

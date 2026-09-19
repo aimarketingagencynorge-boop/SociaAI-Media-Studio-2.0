@@ -10,7 +10,7 @@ export const translations: Record<Language, any> = {
     continueBtn: "KONTYNUUJ MISJĘ",
     newMissionBtn: "NOWA MISJA",
     loginBtn: "ZALOGUJ SIĘ",
-    startBadge: "🎁 500 kredytów ForceCredits na start",
+    startBadge: "🎁 500 FC / 7 dni — karta wymagana",
     common: {
       save: "Zapisz",
       cancel: "Anuluj",
@@ -396,7 +396,7 @@ export const translations: Record<Language, any> = {
     dashboard: {
       missionControl: "MISJA TYGODNIA",
       genWeek: "GENERUJ PLAN TYGODNIOWY",
-      cost: "Koszt: 50 FC",
+      cost: "Koszt: 10 FC",
       addPost: "Dodaj Post",
       empty: "Brak postów. Wygeneruj plan tygodniowy lub dodaj post ręcznie.",
       transmitAll: "Transmituj wszystko",
@@ -457,7 +457,7 @@ export const translations: Record<Language, any> = {
     continueBtn: "CONTINUE MISSION",
     newMissionBtn: "NEW MISSION",
     loginBtn: "LOGIN",
-    startBadge: "🎁 500 ForceCredits for start",
+    startBadge: "🎁 500 FC / 7 days — card required",
     common: {
       save: "Save",
       cancel: "Cancel",
@@ -838,7 +838,7 @@ export const translations: Record<Language, any> = {
     dashboard: {
       missionControl: "WEEKLY MISSION",
       genWeek: "GENERATE WEEKLY PLAN",
-      cost: "Cost: 50 FC",
+      cost: "Cost: 10 FC",
       addPost: "Add Post",
       empty: "No posts found. Generate a weekly plan or add a post manually.",
       transmitAll: "Transmit All",
@@ -899,7 +899,7 @@ export const translations: Record<Language, any> = {
     continueBtn: "FORTSETT MISJON",
     newMissionBtn: "NY MISJON",
     loginBtn: "LOGG INN",
-    startBadge: "🎁 500 ForceCredits for start",
+    startBadge: "🎁 500 FC / 7 days — card required",
     common: {
       save: "Lagre",
       cancel: "Avbryt",
@@ -1217,7 +1217,7 @@ export const translations: Record<Language, any> = {
     dashboard: {
       missionControl: "UKENTLIG MISJON",
       genWeek: "GENERER UKEPLAN",
-      cost: "Kostnad: 50 FC",
+      cost: "Kostnad: 10 FC",
       addPost: "Legg til innlegg",
       empty: "Ingen innlegg funnet. Generer en ukeplan eller legg til et innlegg manuelt.",
       transmitAll: "Send alle",
@@ -1278,7 +1278,7 @@ export const translations: Record<Language, any> = {
     continueBtn: "ПРОДОЛЖИТЬ МИССИЮ",
     newMissionBtn: "НОВАЯ МИССИЯ",
     loginBtn: "ВОЙТИ",
-    startBadge: "🎁 500 ForceCredits на старт",
+    startBadge: "🎁 500 FC / 7 дней — нужна карта",
     common: {
       save: "Сохранить",
       cancel: "Отмена",
@@ -1596,7 +1596,7 @@ export const translations: Record<Language, any> = {
     dashboard: {
       missionControl: "НЕДЕЛЬНАЯ МИССИЯ",
       genWeek: "СОЗДАТЬ НЕДЕЛЬНЫЙ ПЛАН",
-      cost: "Стоимость: 50 FC",
+      cost: "Стоимость: 10 FC",
       addPost: "Добавить пост",
       empty: "Посты не найдены. Создайте недельный план или добавьте пост вручную.",
       transmitAll: "Передать все",

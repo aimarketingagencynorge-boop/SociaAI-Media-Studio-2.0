@@ -1,3 +1,4 @@
+import { localDate, missionDate } from '../missionDates';
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
@@ -10,23 +11,23 @@ const Planner: React.FC = () => {
   const t = translations[language];
   const [view, setView] = useState<'month' | 'week'>('month');
 
-  // Kalendarz symuluje listopad (posts dayIndex 0-6 to 11.11 - 17.11)
-  const days = Array.from({ length: 30 }, (_, i) => i + 1);
-  const dayNames = [
-    t.days.mon, t.days.tue, t.days.wed, t.days.thu, t.days.fri, t.days.sat, t.days.sun
-  ];
-
-  const getPostsForDay = (dayNum: number) => {
-    // Nasza "Misja Tygodnia" zaczyna się od 11 listopada (poniedziałek)
-    const missionStartDay = 11;
-    const missionEndDay = 17;
-    
-    if (dayNum >= missionStartDay && dayNum <= missionEndDay) {
-      const dayIndex = dayNum - missionStartDay;
-      return posts.filter(p => p.dayIndex === dayIndex);
-    }
-    return [];
-  };
+  const [cursor, setCursor] = useState(() => new Date());
+  const start = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const locale = { PL: 'pl-PL', EN: 'en-GB', NO: 'nb-NO', RU: 'ru-RU' }[language];
+  const dayNames = [t.days.mon, t.days.tue, t.days.wed, t.days.thu, t.days.fri, t.days.sat, t.days.sun];
+  const gridStart = view === 'month' ? new Date(start) : new Date(cursor);
+  gridStart.setDate(gridStart.getDate() - ((gridStart.getDay() + 6) % 7));
+  const days = Array.from({ length: view === 'month' ? 42 : 7 }, (_, i) => {
+    const day = new Date(gridStart); day.setDate(day.getDate() + i); return day;
+  });
+  const move = (direction: number) => setCursor(previous => {
+    const next = new Date(previous);
+    if (view === 'month') { next.setDate(1); next.setMonth(next.getMonth() + direction); }
+    else next.setDate(next.getDate() + direction * 7);
+    return next;
+  });
+  const getPostsForDay = (day: Date) => posts.filter(post =>
+    (post.plannedDate || missionDate(post.dayIndex, post.weekIndex)) === localDate(day));
 
   return (
     <div className="p-8 pb-24 max-w-7xl mx-auto">
@@ -57,11 +58,11 @@ const Planner: React.FC = () => {
       <div className="glass-panel rounded-[2.5rem] border-white/5 overflow-hidden flex flex-col">
         <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
            <div className="flex items-center gap-4">
-              <button className="p-2 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors">
+              <button aria-label="Poprzedni okres" onClick={() => move(-1)} className="p-2 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors">
                 <ChevronLeft size={20} />
               </button>
-              <span className="font-orbitron text-sm tracking-widest uppercase">{t.planner.november2024}</span>
-              <button className="p-2 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors">
+              <span className="font-orbitron text-sm tracking-widest uppercase">{cursor.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}</span>
+              <button aria-label="Następny okres" onClick={() => move(1)} className="p-2 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors">
                 <ChevronRight size={20} />
               </button>
            </div>
@@ -79,11 +80,11 @@ const Planner: React.FC = () => {
             
             return (
               <div 
-                key={day} 
+                key={localDate(day)} 
                 className={`min-h-[140px] border-r border-b border-white/5 p-3 group hover:bg-white/[0.02] transition-colors relative ${dayPosts.length > 0 ? 'bg-[#34E0F7]/5' : ''}`}
               >
                 <span className={`text-[10px] font-orbitron transition-colors ${dayPosts.length > 0 ? 'text-[#34E0F7] font-black' : 'text-white/10 group-hover:text-white'}`}>
-                  {day}
+                  {day.getDate()}
                 </span>
                 
                 <div className="mt-2 space-y-2">

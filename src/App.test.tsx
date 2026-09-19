@@ -27,7 +27,7 @@ vi.mock('firebase/firestore', () => ({
   where: vi.fn(),
   onSnapshot: vi.fn(() => vi.fn()), // Returns unsubscribe
   getDoc: vi.fn(),
-  setDoc: vi.fn(),
+  setDoc: vi.fn().mockResolvedValue(undefined),
   updateDoc: vi.fn(),
   getDocFromServer: vi.fn(),
   deleteDoc: vi.fn(),
@@ -111,7 +111,7 @@ describe('Main User Journey', () => {
 
     // 1. Check if Landing Page is rendered
     // Using Polish text as default language is PL
-    expect(screen.getByText(/SociAI MediA Studio/i)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /ROZPOCZNIJ MISJĘ/i })).toBeInTheDocument();
     
     // The button text is "ROZPOCZNIJ MISJĘ" in PL
     const startButton = screen.getByText(/ROZPOCZNIJ MISJĘ/i);
@@ -147,6 +147,7 @@ describe('Main User Journey', () => {
 
     fireEvent.click(startButton);
 
+    // Existing user login completes via the popup handler.
     // 3. Wait for Dashboard/AppShell to load
     await waitFor(() => {
       // Dashboard view should have "Centrum Dowodzenia" in PL
@@ -155,7 +156,7 @@ describe('Main User Journey', () => {
 
     // 4. Navigate to Brand Kit
     // Brand Kit is "DNA Marki" in PL
-    const brandKitLink = screen.getByText(/DNA Marki/i);
+    const brandKitLink = screen.getByRole('button', { name: /^DNA Marki$/i });
     fireEvent.click(brandKitLink);
 
     // 5. Verify Brand Kit page is loaded
@@ -165,3 +166,4 @@ describe('Main User Journey', () => {
     }, { timeout: 15000 });
   }, 30000);
 });
+
