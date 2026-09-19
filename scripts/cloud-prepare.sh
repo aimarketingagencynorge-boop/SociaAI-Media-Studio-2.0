@@ -6,7 +6,7 @@ SERVICE=sociai-studio-app
 REGION=us-west1
 ACCOUNT=sociai-studio-runtime@$PROJECT.iam.gserviceaccount.com
 BUCKET=$PROJECT-sociai-media
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com --project="$PROJECT" --quiet
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com firebasestorage.googleapis.com --project="$PROJECT" --quiet
 if ! gcloud iam service-accounts describe "$ACCOUNT" --project="$PROJECT" >/dev/null 2>&1; then
   gcloud iam service-accounts create sociai-studio-runtime --display-name='SociAI Studio runtime' --project="$PROJECT" --quiet
 fi

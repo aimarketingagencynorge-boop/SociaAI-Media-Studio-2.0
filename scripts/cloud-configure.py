@@ -59,7 +59,7 @@ bucket_response = session.get(bucket_url, timeout=60)
 if bucket_response.status_code == 404:
     api('POST', bucket_url+':addFirebase', json={})
 elif not bucket_response.ok:
-    raise RuntimeError('Cannot inspect Firebase Storage registration')
+    raise RuntimeError(f'Cannot inspect Firebase Storage registration: {bucket_response.status_code} '+bucket_response.text[:700])
 storage_rules = "rules_version = '2'; service firebase.storage { match /b/{bucket}/o { match /{path=**} { allow read, write: if false; } } }"
 storage_set = api('POST', rules_base+'/rulesets', json={'source': {'files': [{'name': 'storage.rules', 'content': storage_rules}]}})
 storage_release = {'name': f'projects/{PROJECT}/releases/firebase.storage/{bucket}', 'rulesetName': storage_set['name']}
