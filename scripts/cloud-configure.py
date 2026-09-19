@@ -56,10 +56,11 @@ print('Named Firestore database rules deployed')
 bucket = PROJECT+'-sociai-media'
 bucket_url = f'https://firebasestorage.googleapis.com/v1beta/projects/{PROJECT}/buckets/{bucket}'
 bucket_response = session.get(bucket_url, timeout=60)
-if bucket_response.status_code == 404:
-    api('POST', bucket_url+':addFirebase', json={})
-elif not bucket_response.ok:
+if not bucket_response.ok and bucket_response.status_code != 404:
     raise RuntimeError(f'Cannot inspect Firebase Storage registration: {bucket_response.status_code} '+bucket_response.text[:700])
+# A successful GET can return only the bucket name before Firebase is fully
+# provisioned. Explicitly activate the integration, including its service access.
+api('POST', bucket_url+':addFirebase', json={})
 storage_rules = "rules_version = '2'; service firebase.storage { match /b/{bucket}/o { match /{path=**} { allow read, write: if false; } } }"
 storage_set = api('POST', rules_base+'/rulesets', json={'source': {'files': [{'name': 'storage.rules', 'content': storage_rules}]}})
 storage_release = {'name': f'projects/{PROJECT}/releases/firebase.storage/{bucket}', 'rulesetName': storage_set['name']}

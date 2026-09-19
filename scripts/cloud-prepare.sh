@@ -15,5 +15,6 @@ if ! gcloud storage buckets describe "gs://$BUCKET" >/dev/null 2>&1; then
   gcloud storage buckets create "gs://$BUCKET" --project="$PROJECT" --location="$REGION" --uniform-bucket-level-access --quiet
 fi
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$ACCOUNT" --role=roles/storage.objectAdmin --quiet >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member="serviceAccount:$ACCOUNT" --role=roles/storage.legacyBucketReader --quiet >/dev/null
 gcloud run deploy "$SERVICE" --source=. --project="$PROJECT" --region="$REGION" --service-account="$ACCOUNT" --no-allow-unauthenticated --min-instances=0 --max-instances=1 --concurrency=10 --cpu=1 --memory=1Gi --timeout=600 --port=8080 --set-env-vars="FIREBASE_PROJECT_ID=$PROJECT,FIRESTORE_DATABASE_ID=$DATABASE,FIREBASE_STORAGE_BUCKET=$BUCKET,STARTER_DAILY_LIMIT=25" --quiet
 gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)'

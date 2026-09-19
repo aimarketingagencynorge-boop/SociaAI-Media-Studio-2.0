@@ -32,7 +32,13 @@ Prawdziwe płatności nie są uruchomione. Przed przejściem na live trzeba prze
 - Chroniony status abonamentu bez logowania: HTTP 401.
 - Podpisany, nieszkodliwy test webhooka: HTTP 200; żądanie bez podpisu: HTTP 400.
 - TypeScript: poprawny. Lokalna seria testów: 25 testów zaliczonych i jeden timeout testu UI; samodzielne powtórzenie tego testu UI zakończyło się powodzeniem.
-- Do potwierdzenia w publicznej wersji: pełne logowanie Google, generowanie tekstu i grafiki, zapis danych użytkownika oraz pełen cykl testowego abonamentu. Automatyczne kliknięcie w oknie Google nie zakończyło się powodzeniem; pozostawiono okno użytkownikowi.
+- Potwierdzone w publicznej wersji po zalogowaniu użytkownika: plan postów oraz generowanie, zapis i wyświetlenie grafiki 1024 × 1024. Pełen cykl testowego abonamentu pozostaje do sprawdzenia.
+
+### Naprawa Storage (19 września 2026)
+
+Generowanie obrazu przez Gemini kończyło się sukcesem, ale pobranie adresu pliku przez Firebase zwracało 403. Jawnie wykonano `buckets:addFirebase` i dodano kontu wykonawczemu `roles/storage.legacyBucketReader` wyłącznie na magazynie SociAI, obok istniejącego `roles/storage.objectAdmin`. Skrypty uwzględniają oba kroki. Sam GET zasobu bucketu zwracał 200 z nazwą i nie wystarczał do potwierdzenia gotowości pobierania.
+
+Weryfikacja po naprawie: pobranie istniejącego pliku przez token Firebase zwróciło HTTP 200 i `image/png`; nowa generacja z kokpitu wyświetliła załadowany obraz 1024 × 1024 bez błędu. Nie zmieniono obrazu Cloud Run ani klucza Gemini.
 
 ## Kolejne wydania
 
