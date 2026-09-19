@@ -11,4 +11,4 @@ ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
 USER node
-CMD ["pnpm", "start"]
+CMD ["node", "node_modules/tsx/dist/cli.mjs", "server.ts"]
